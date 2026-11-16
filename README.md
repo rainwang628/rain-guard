@@ -2,6 +2,8 @@
 
 下班前环境巡检。每日 17:30 由 launchd（`com.rain.rain-root-guard`）跑一次，覆盖三块：`~/rain` 顶层结构、用户级 LaunchAgents、第三方 LaunchDaemons。有异常才推送 PushPlus 微信，正常静默；同一组异常不重复推送。
 
+代码仓库：`https://github.com/rainwang628/rain-root-guard`（私有）。`guard.log`、`state.json`、`launchd.*.log` 属运行时产物，由 `.gitignore` 排除；换机后先按本文件部署，首次运行会自动建立新的 state 基线。
+
 ## 检查项
 
 | 范围 | 判定 | 异常示例 |
