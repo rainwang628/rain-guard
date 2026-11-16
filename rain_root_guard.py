@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-# 文件版本：V1.2｜更新日期：2026-11-16
-# 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons 期望状态。有异常才推送，无异常静默。
-"""巡检四块：
+# 文件版本：V1.3｜更新日期：2026-11-16
+# 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons + 项目成熟度巡检。有异常才推送，无异常静默。
+"""巡检六块：
 1. ~/rain 顶层可见条目是否偏离 whitelist；
 2. home 顶层可见条目是否偏离 homeWhitelist（兜住宿主应用静默建目录）；
 3. Downloads / Desktop 等暂存目录是否有超期滞留文件；
-4. 关键 launchd 任务是否在位、已加载、在运行（用户级 LaunchAgents 与第三方 LaunchDaemons）。
+4. 关键 launchd 任务是否在位、已加载、在运行（用户级 LaunchAgents 与第三方 LaunchDaemons）；
+5. 正式项目（apps/）：git 仓库逐个查未提交改动、未推送提交、超期未提交；
+6. 赛马项目（racing/）：按最近提交/修改时间算静默天数，分可清理候选与可跟进两档。
 任一异常走 PushPlus 推送；与上次异常集合相同则不重复打扰。手动调试见 README。
 """
 
@@ -235,6 +237,127 @@ def check_launchd(kind: str, directory: Path, expected: dict[str, str],
     return issues
 
 
+# ---------- 检查五 / 六：项目成熟度巡检 ----------
+
+GIT_SENTINEL = object()
+IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", ".runtime", "dist", "vendor"}
+
+
+def git_info(cwd: Path, *args: str):
+    """在 cwd 跑 git 子命令；非仓库或失败返回 None。"""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(cwd), *args],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def is_git_repo(path: Path) -> bool:
+    return git_info(path, "rev-parse", "--is-inside-work-tree") == "true"
+
+
+def latest_activity(path: Path) -> tuple[float, str]:
+    """返回 (时间戳, 来源)：git 末次提交与目录内文件 mtime 取较新者。"""
+    stamps: list[tuple[float, str]] = []
+    if is_git_repo(path):
+        commit_ts = git_info(path, "log", "-1", "--format=%ct")
+        if commit_ts and commit_ts.isdigit():
+            stamps.append((float(commit_ts), "提交"))
+    newest, source = 0.0, "文件"
+    try:
+        for root, dirs, files in os.walk(path):
+            dirs[:] = [d for d in dirs if d not in IGNORE_DIRS and not d.startswith(".")]
+            for name in files:
+                if name.startswith("."):
+                    continue
+                try:
+                    mtime = (Path(root) / name).stat().st_mtime
+                except OSError:
+                    continue
+                if mtime > newest:
+                    newest, source = mtime, "文件"
+    except OSError:
+        pass
+    stamps.append((newest, source))
+    return max(stamps, key=lambda item: item[0])
+
+
+def check_formal_projects(block: dict) -> list[str]:
+    """apps/ 下的正式项目：git 仓库逐个查同步状态；非 git 项目单列由人判断。"""
+    apps_dir = Path(os.path.expanduser(
+        os.environ.get("RAIN_APPS_DIR") or block.get("dir") or str(ROOT / "projs" / "apps")
+    ))
+    if not apps_dir.is_dir():
+        return [f"正式项目目录不存在：{apps_dir}"]
+
+    stale_days = float(block.get("staleDays", 3))
+    now = datetime.now().timestamp()
+    issues: list[str] = []
+    try:
+        projects = sorted(p for p in apps_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
+    except OSError as exc:
+        return [f"扫描正式项目目录失败：{exc}"]
+
+    for project in projects:
+        if not is_git_repo(project):
+            issues.append(f"{project.name} 非 git 仓库（未纳管，判断是否需发远端）")
+            continue
+        dirty = git_info(project, "status", "--porcelain")
+        if dirty:
+            issues.append(f"{project.name} 有未提交改动（{len(dirty.splitlines())} 项）")
+        unpushed = git_info(project, "rev-list", "--count", "@{upstream}..HEAD")
+        if unpushed and unpushed != "0":
+            issues.append(f"{project.name} 有 {unpushed} 个提交未推送")
+        elif git_info(project, "rev-parse", "@{upstream}") is None:
+            branch = git_info(project, "rev-parse", "--abbrev-ref", "HEAD") or "HEAD"
+            issues.append(f"{project.name} 分支 {branch} 未设 upstream（无法确认推送）")
+        commit_ts = git_info(project, "log", "-1", "--format=%ct")
+        if commit_ts and commit_ts.isdigit():
+            idle_days = (now - float(commit_ts)) / 86400
+            if idle_days > stale_days:
+                issues.append(f"{project.name} 已 {int(idle_days)} 天无提交（阈值 {int(stale_days)} 天）")
+    return issues
+
+
+def check_racing_projects(block: dict) -> list[str]:
+    """racing/ 下的赛马项目：按静默天数分可清理候选与可跟进两档。"""
+    racing_dir = Path(os.path.expanduser(
+        os.environ.get("RAIN_RACING_DIR") or block.get("dir") or str(ROOT / "projs" / "racing")
+    ))
+    if not racing_dir.is_dir():
+        return [f"赛马项目目录不存在：{racing_dir}"]
+
+    stale_days = float(block.get("staleDays", 30))
+    active_days = float(block.get("activeDays", 7))
+    now = datetime.now().timestamp()
+    stale: list[str] = []
+    active: list[str] = []
+    try:
+        projects = sorted(p for p in racing_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
+    except OSError as exc:
+        return [f"扫描赛马项目目录失败：{exc}"]
+
+    for project in projects:
+        ts, source = latest_activity(project)
+        if ts == 0.0:
+            continue
+        idle_days = (now - ts) / 86400
+        label = f"{project.name}（{int(idle_days)} 天未动，按{source}）"
+        if idle_days >= stale_days:
+            stale.append(label)
+        elif idle_days <= active_days:
+            active.append(label)
+    issues: list[str] = []
+    if stale:
+        issues.append(f"赛马可清理候选（≥{int(stale_days)}天）：" + "、".join(stale))
+    if active:
+        issues.append(f"赛马近期活跃可跟进（≤{int(active_days)}天）：" + "、".join(active))
+    return issues
+
+
 def main() -> int:
     config = load_json(CONFIG_PATH, {})
     if "--test-push" in sys.argv:
@@ -271,6 +394,14 @@ def main() -> int:
                 (f"{kind}（{directory}）",
                  check_launchd(kind, directory, block.get("expected") or {}, svc))
             )
+
+    formal = config.get("formalProjects") or {}
+    if formal.get("enabled", True):
+        sections.append(("正式项目 apps/", check_formal_projects(formal)))
+
+    racing = config.get("racingProjects") or {}
+    if racing.get("enabled", True):
+        sections.append(("赛马项目 racing/", check_racing_projects(racing)))
 
     issues = [line for _, block in sections for line in block]
     body = "\n".join(

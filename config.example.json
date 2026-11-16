@@ -17,5 +17,16 @@
   "launchdDaemons": {
     "dir": "/Library/LaunchDaemons",
     "expected": {}
+  },
+  "formalProjects": {
+    "enabled": true,
+    "dir": "~/rain/projs/apps",
+    "staleDays": 3
+  },
+  "racingProjects": {
+    "enabled": true,
+    "dir": "~/rain/projs/racing",
+    "staleDays": 30,
+    "activeDays": 7
   }
 }
