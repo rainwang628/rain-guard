@@ -2,7 +2,7 @@
 
 下班前环境巡检。每日 17:30 由 launchd（`com.rain.rain-root-guard`）跑一次，覆盖七块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度、本地补丁（`patches/`）长期未动复核。有异常才推送 PushPlus 微信，正常静默；同一组异常不重复推送。
 
-代码仓库：`https://github.com/rainwang628/rain-root-guard`（公开）。`guard.log`、`state.json`、`launchd.*.log` 属运行时产物，由 `.gitignore` 排除；换机后先按本文件部署，首次运行会自动建立新的 state 基线。
+代码仓库：`https://github.com/rainwang628/rain-root-guard`（公开）。换机后先按本文件部署，首次运行会自动建立新的 state 基线。
 
 ## 检查项
 
@@ -55,7 +55,7 @@
 | 文件 | 说明 |
 |---|---|
 | `rain_root_guard.py` | 巡检脚本；`--dry-run` 只打印不推送，`--test-push` 发测试消息 |
-| `config.example.json` | 配置模板（入库）；`config.json` 是机器本地配置，`.gitignore` 已排除，首次部署时 `cp config.example.json config.json` 再按本机补基线 |
+| `config.example.json` | 配置模板；首次部署时 `cp config.example.json config.json` 再按本机补基线 |
 | `com.rain.rain-root-guard.plist` | launchd 定义（每日 17:30），已复制到 `~/Library/LaunchAgents/` |
 | `state.json` | 上次的异常集合，防重复打扰；也用于判断「已恢复」 |
 | `guard.log`、`launchd.*.log` | 日志 |
