@@ -1,0 +1,15 @@
+{
+  "whitelist": ["agents.md", "hosts", "lab", "memory", "projs", "softs", "tmp"],
+  "pushplusConfigPath": "~/rain/projs/services/aa-notify/config.json",
+  "pushplusToken": "",
+  "launchdAgents": {
+    "dir": "~/Library/LaunchAgents",
+    "expected": {
+      "com.rain.aa-notify": "run"
+    }
+  },
+  "launchdDaemons": {
+    "dir": "/Library/LaunchDaemons",
+    "expected": {}
+  }
+}

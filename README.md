@@ -23,7 +23,7 @@
 | 文件 | 说明 |
 |---|---|
 | `rain_root_guard.py` | 巡检脚本；`--dry-run` 只打印不推送，`--test-push` 发测试消息 |
-| `config.json` | 三块检查的基线：`whitelist`、`launchdAgents`、`launchdDaemons`；PushPlus token 从 aa-notify 的 config 引用，不重复存凭据 |
+| `config.example.json` | 配置模板（入库）；`config.json` 是机器本地配置，`.gitignore` 已排除，首次部署时 `cp config.example.json config.json` 再按本机补基线 |
 | `com.rain.rain-root-guard.plist` | launchd 定义（每日 17:30），已复制到 `~/Library/LaunchAgents/` |
 | `state.json` | 上次的异常集合，防重复打扰；也用于判断「已恢复」 |
 | `guard.log`、`launchd.*.log` | 日志 |
