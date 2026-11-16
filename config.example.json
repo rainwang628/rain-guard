@@ -28,5 +28,10 @@
     "dir": "~/rain/projs/racing",
     "staleDays": 30,
     "activeDays": 7
+  },
+  "patchProjects": {
+    "enabled": true,
+    "dir": "~/rain/projs/patches",
+    "staleDays": 60
   }
 }

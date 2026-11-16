@@ -1,6 +1,6 @@
 # rain-root-guard
 
-下班前环境巡检。每日 17:30 由 launchd（`com.rain.rain-root-guard`）跑一次，覆盖六块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度。有异常才推送 PushPlus 微信，正常静默；同一组异常不重复推送。
+下班前环境巡检。每日 17:30 由 launchd（`com.rain.rain-root-guard`）跑一次，覆盖七块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度、本地补丁（`patches/`）长期未动复核。有异常才推送 PushPlus 微信，正常静默；同一组异常不重复推送。
 
 代码仓库：`https://github.com/rainwang628/rain-root-guard`（公开）。`guard.log`、`state.json`、`launchd.*.log` 属运行时产物，由 `.gitignore` 排除；换机后先按本文件部署，首次运行会自动建立新的 state 基线。
 
@@ -15,6 +15,7 @@
 | `/Library/LaunchDaemons` | 同上，状态取自 system 域 | Clash 特权助手未运行、第三方 daemon 新增未登记 |
 | `apps/`（正式项目） | git 仓库逐个查：未提交改动、`@{upstream}..HEAD` 未推送、未设 upstream、末次提交超 `staleDays`；非 git 仓库单列提示 | 有提交没 push、分支没跟踪远端、太久没提交、正式项目还没纳管 |
 | `racing/`（赛马项目） | 取 git 末次提交与目录文件 mtime 的较新者算静默天数：`≥staleDays` 列可清理候选，`≤activeDays` 列近期活跃可跟进 | 赛马项目长期不动该清理、最近有动静可跟进 |
+| `patches/`（本地补丁） | 按目录文件 mtime 算静默天数：`≥staleDays` 列长期未动复核候选；不查 git 同步（这类本就不建仓库） | 本地补丁长期没动，复核是否仍需要 |
 
 水位按需配置，避免把「人为禁用」误报成故障：`com.google.GoogleUpdater.wake`、`com.valvesoftware.steamclean`、`io.github.clash-verge-rev.clash-verge-rev` 只要求 `present`，因为它们是主动关掉的。
 
@@ -29,10 +30,11 @@
 | `stagingDirs.ignore` | `.DS_Store`、`.localized` | 隐藏项本就跳过；这里只列需要额外忽略的名字 |
 | `formalProjects` | `staleDays: 3`，`dir: ~/rain/projs/apps` | 正式项目巡检；`enabled: false` 停用 |
 | `racingProjects` | `staleDays: 30`，`activeDays: 7`，`dir: ~/rain/projs/racing` | 赛马项目巡检；两档之间（8–29 天）不报，避免中间态天天打扰 |
+| `patchProjects` | `staleDays: 60`，`dir: ~/rain/projs/patches` | 本地补丁巡检；阈值比赛马长，只报长期未动的复核候选 |
 
-`homeWhitelist`、`stagingDirs` 不配就不查对应项。两段项目巡检默认启用（内建默认目录 `~/rain/projs/apps` 与 `~/rain/projs/racing`），要停用需显式写 `enabled: false`。项目巡检忽略 `node_modules`、`.venv`、`dist` 等构建目录，只按源码文件的 mtime 算活跃度。
+`homeWhitelist`、`stagingDirs` 不配就不查对应项。三段项目巡检默认启用（内建默认目录 `~/rain/projs/apps`、`~/rain/projs/racing` 与 `~/rain/projs/patches`），要停用需显式写 `enabled: false`。项目巡检忽略 `node_modules`、`.venv`、`dist` 等构建目录，只按源码文件的 mtime 算活跃度。
 
-演练项目巡检可用 `RAIN_APPS_DIR`、`RAIN_RACING_DIR` 指向假目录，不碰真实项目。
+演练项目巡检可用 `RAIN_APPS_DIR`、`RAIN_RACING_DIR`、`RAIN_PATCH_DIR` 指向假目录，不碰真实项目。
 
 ## 下载落点与权限边界
 
@@ -46,7 +48,7 @@
 
 ## 背景
 
-`~/rain` 顶层是核心结构：新增顶层目录须先报告确认（`AGENTS.macos.md` 硬性禁令，规则 V7.3 起）。宿主应用（DSH、WorkBuddy 等）会按自己的固定路径静默建目录，不看规则；launchd 侧则会出现被静默 bootout、被系统后台项拦截、服务崩溃后无人发现的情况。本服务负责在没人看的时候发现并告知。V1.2 把同一套 diff 机制扩到 home 顶层，兜住「新装应用在 `~` 下自建目录」，并按「暂存目录不留文件」的既有要求检查滞留文件。暂存巡检从 TCC 保护的 `~/Downloads`／`~/Documents` 迁到 `~/rain/tmp/inbox/`，把「下载即暂存、超时提醒」的治理留在无需系统授权的路径内。V1.3 把同一套巡检扩到项目成熟度：`apps/` 正式项目盯 git 同步，`racing/` 赛马项目盯静默活跃度，让「该提交没提交」和「赛马该清理」在下班前一次报出来。
+`~/rain` 顶层是核心结构：新增顶层目录须先报告确认（`AGENTS.macos.md` 硬性禁令，规则 V7.3 起）。宿主应用（DSH、WorkBuddy 等）会按自己的固定路径静默建目录，不看规则；launchd 侧则会出现被静默 bootout、被系统后台项拦截、服务崩溃后无人发现的情况。本服务负责在没人看的时候发现并告知。V1.2 把同一套 diff 机制扩到 home 顶层，兜住「新装应用在 `~` 下自建目录」，并按「暂存目录不留文件」的既有要求检查滞留文件。暂存巡检从 TCC 保护的 `~/Downloads`／`~/Documents` 迁到 `~/rain/tmp/inbox/`，把「下载即暂存、超时提醒」的治理留在无需系统授权的路径内。V1.3 把同一套巡检扩到项目成熟度：`apps/` 正式项目盯 git 同步，`racing/` 赛马项目盯静默活跃度，让「该提交没提交」和「赛马该清理」在下班前一次报出来。V1.4 新增 `patches/` 本地补丁一组，按更长的静默阈值提示长期未动的复核候选，不查 git 同步（这类不建仓库）。
 
 ## 文件
 
@@ -61,7 +63,7 @@
 ## 手动使用
 
 ```bash
-python3 rain_root_guard.py --dry-run                            # 看六块结果，不推送
+python3 rain_root_guard.py --dry-run                            # 看七块结果，不推送
 python3 rain_root_guard.py --test-push                          # 验证微信通道
 RAIN_ROOT=/tmp/fake-root RAIN_HOME_ROOT=/tmp/fake-home \
   RAIN_STAGING_DIRS=/tmp/fake-downloads,/tmp/fake-desktop \
@@ -78,5 +80,5 @@ RAIN_ROOT=/tmp/fake-root RAIN_HOME_ROOT=/tmp/fake-home \
 - 源码在 `~/rain/projs/apps/rain-root-guard`，部署根在 `~/rain/projs/services/rain-root-guard`；改代码只改源码，再 `./deploy.sh rain-root-guard` 单向推送，**禁止在部署根手改代码**。
 - 部署：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.rain.rain-root-guard.plist`
 - 回滚：`launchctl bootout gui/$(id -u)/com.rain.rain-root-guard && rm ~/Library/LaunchAgents/com.rain.rain-root-guard.plist`
-- 基线变更：rain 顶层白名单改 `config.json` 并同步 `AGENTS.macos.md`；home 白名单与暂存目录改 `config.json` 的 `homeWhitelist` / `stagingDirs`；launchd 基线改 `launchdAgents` / `launchdDaemons`，新增服务时把对应 Label 加进去，否则会报「新增未登记」；项目巡检阈值改 `formalProjects` / `racingProjects`。
+- 基线变更：rain 顶层白名单改 `config.json` 并同步 `AGENTS.macos.md`；home 白名单与暂存目录改 `config.json` 的 `homeWhitelist` / `stagingDirs`；launchd 基线改 `launchdAgents` / `launchdDaemons`，新增服务时把对应 Label 加进去，否则会报「新增未登记」；项目巡检阈值改 `formalProjects` / `racingProjects` / `patchProjects`。
 - 改脚本或 `config.json` 无需重载 plist；改 plist 的触发时间需 `bootout` + `bootstrap`。V1.3 未改 plist，部署后原有的 17:30 任务继续执行新脚本。

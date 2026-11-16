@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-# 文件版本：V1.3｜更新日期：2026-11-16
+# 文件版本：V1.4｜更新日期：2026-11-16
 # 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons + 项目成熟度巡检。有异常才推送，无异常静默。
-"""巡检六块：
+"""巡检七块：
 1. ~/rain 顶层可见条目是否偏离 whitelist；
 2. home 顶层可见条目是否偏离 homeWhitelist（兜住宿主应用静默建目录）；
 3. Downloads / Desktop 等暂存目录是否有超期滞留文件；
 4. 关键 launchd 任务是否在位、已加载、在运行（用户级 LaunchAgents 与第三方 LaunchDaemons）；
 5. 正式项目（apps/）：git 仓库逐个查未提交改动、未推送提交、超期未提交；
-6. 赛马项目（racing/）：按最近提交/修改时间算静默天数，分可清理候选与可跟进两档。
+6. 赛马项目（racing/）：按最近提交/修改时间算静默天数，分可清理候选与可跟进两档；
+7. 本地补丁（patches/）：自用、不交付、不建仓库，按最近活动时间提示长期未动的复核候选。
 任一异常走 PushPlus 推送；与上次异常集合相同则不重复打扰。手动调试见 README。
 """
 
@@ -358,6 +359,34 @@ def check_racing_projects(block: dict) -> list[str]:
     return issues
 
 
+def check_patch_projects(block: dict) -> list[str]:
+    """patches/ 下的本地补丁：自用、不交付、不建仓库；只提示长期未动的复核候选。"""
+    patch_dir = Path(os.path.expanduser(
+        os.environ.get("RAIN_PATCH_DIR") or block.get("dir") or str(ROOT / "projs" / "patches")
+    ))
+    if not patch_dir.is_dir():
+        return [f"本地补丁目录不存在：{patch_dir}"]
+
+    stale_days = float(block.get("staleDays", 60))
+    now = datetime.now().timestamp()
+    stale: list[str] = []
+    try:
+        projects = sorted(p for p in patch_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
+    except OSError as exc:
+        return [f"扫描本地补丁目录失败：{exc}"]
+
+    for project in projects:
+        ts, source = latest_activity(project)
+        if ts == 0.0:
+            continue
+        idle_days = (now - ts) / 86400
+        if idle_days >= stale_days:
+            stale.append(f"{project.name}（{int(idle_days)} 天未动，按{source}）")
+    if stale:
+        return [f"本地补丁长期未动、可复核是否仍需要（≥{int(stale_days)}天）：" + "、".join(stale)]
+    return []
+
+
 def main() -> int:
     config = load_json(CONFIG_PATH, {})
     if "--test-push" in sys.argv:
@@ -402,6 +431,10 @@ def main() -> int:
     racing = config.get("racingProjects") or {}
     if racing.get("enabled", True):
         sections.append(("赛马项目 racing/", check_racing_projects(racing)))
+
+    patch = config.get("patchProjects") or {}
+    if patch.get("enabled", True):
+        sections.append(("本地补丁 patches/", check_patch_projects(patch)))
 
     issues = [line for _, block in sections for line in block]
     body = "\n".join(
