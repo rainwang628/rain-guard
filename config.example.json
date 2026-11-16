@@ -1,5 +1,11 @@
 {
   "whitelist": ["agents.md", "hosts", "lab", "memory", "projs", "softs", "tmp"],
+  "homeWhitelist": ["Applications", "Desktop", "Documents", "Downloads", "Library", "Movies", "Music", "Pictures", "Public", "jiaojiao", "rain"],
+  "stagingDirs": {
+    "dirs": ["~/rain/tmp/inbox"],
+    "graceHours": 24,
+    "ignore": [".DS_Store", ".localized"]
+  },
   "pushplusConfigPath": "~/rain/projs/services/aa-notify/config.json",
   "pushplusToken": "",
   "launchdAgents": {

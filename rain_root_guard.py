@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-# 文件版本：V1.1｜更新日期：2026-11-16
-# 下班前环境巡检：~/rain 顶层结构 + LaunchAgents / LaunchDaemons 期望状态。有异常才推送，无异常静默。
-"""巡检两件事：
-1. ~/rain 顶层可见条目是否偏离白名单；
-2. 关键 launchd 任务是否在位、已加载、在运行（用户级 LaunchAgents 与第三方 LaunchDaemons）。
+# 文件版本：V1.2｜更新日期：2026-11-16
+# 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons 期望状态。有异常才推送，无异常静默。
+"""巡检四块：
+1. ~/rain 顶层可见条目是否偏离 whitelist；
+2. home 顶层可见条目是否偏离 homeWhitelist（兜住宿主应用静默建目录）；
+3. Downloads / Desktop 等暂存目录是否有超期滞留文件；
+4. 关键 launchd 任务是否在位、已加载、在运行（用户级 LaunchAgents 与第三方 LaunchDaemons）。
 任一异常走 PushPlus 推送；与上次异常集合相同则不重复打扰。手动调试见 README。
 """
 
@@ -24,6 +26,7 @@ STATE_PATH = Path(os.environ.get("RAIN_STATE_PATH", str(HERE / "state.json")))
 LOG_PATH = HERE / "guard.log"
 
 ROOT = Path(os.environ.get("RAIN_ROOT", str(Path.home() / "rain")))
+HOME_ROOT = Path(os.environ.get("RAIN_HOME_ROOT", str(Path.home())))
 UID = str(os.getuid())
 
 LEVELS = {"present": 0, "loaded": 1, "run": 2}
@@ -90,31 +93,83 @@ def describe(path: Path) -> str:
     return "文件"
 
 
-# ---------- 检查一：~/rain 顶层结构 ----------
+# ---------- 检查一：目录结构与白名单 ----------
 
-def check_root(whitelist: set[str]) -> list[str]:
+def check_root(whitelist: set[str], root: Path | None = None,
+               label: str = "~/rain") -> list[str]:
+    target = root or ROOT
     if not whitelist:
-        return ["config 缺少 whitelist"]
+        return [f"config 缺少 {label} 白名单"]
     try:
         entries = {
             item.name: describe(item)
-            for item in ROOT.iterdir()
+            for item in target.iterdir()
             if not item.name.startswith(".")
         }
     except OSError as exc:
-        return [f"扫描 {ROOT} 失败：{exc}"]
+        return [f"扫描 {target} 失败：{exc}"]
 
     issues = []
     unexpected = sorted(n for n in entries if n not in whitelist)
     missing = sorted(n for n in whitelist if n not in entries)
     if unexpected:
-        issues.append("未登记条目：" + "；".join(f"{n}（{entries[n]}）" for n in unexpected))
+        issues.append(f"{label} 未登记条目：" + "；".join(f"{n}（{entries[n]}）" for n in unexpected))
     if missing:
-        issues.append("白名单缺失：" + "、".join(missing))
+        issues.append(f"{label} 白名单缺失：" + "、".join(missing))
     return issues
 
 
-# ---------- 检查二：launchd 期望状态 ----------
+# ---------- 检查二：暂存目录滞留 ----------
+
+def check_staging(block: dict) -> list[str]:
+    """Downloads / Desktop 等只作暂存，超期未清理的非隐藏条目才报。"""
+    dirs = block.get("dirs") or []
+    if not dirs:
+        return []
+    override = os.environ.get("RAIN_STAGING_DIRS")
+    if override:
+        dirs = [p for p in override.split(",") if p]
+    grace_hours = float(block.get("graceHours", 24))
+    ignore = set(block.get("ignore") or [])
+    now = datetime.now().timestamp()
+    cutoff = now - grace_hours * 3600
+    issues: list[str] = []
+    for raw in dirs:
+        path = Path(os.path.expanduser(raw))
+        try:
+            entries = [
+                item for item in path.iterdir()
+                if item.name not in ignore and not item.name.startswith(".")
+            ]
+        except FileNotFoundError:
+            issues.append(f"{raw} 目录不存在")
+            continue
+        except PermissionError:
+            issues.append(
+                f"{raw} 巡检受限（权限拒绝）：需在系统设置 → 隐私与安全性 → 完全磁盘访问授权"
+            )
+            continue
+        except OSError as exc:
+            issues.append(f"{raw} 巡检受限（{type(exc).__name__}）：{exc}")
+            continue
+        stale = []
+        for item in sorted(entries, key=lambda p: p.name):
+            try:
+                mtime = item.stat().st_mtime
+            except OSError:
+                continue
+            if mtime <= cutoff:
+                stale.append(f"{item.name}（滞留 {int((now - mtime) // 3600)}h）")
+        if stale:
+            suffix = "…" if len(stale) > 8 else ""
+            issues.append(
+                f"{raw} 有 {len(stale)} 项滞留超过 {int(grace_hours)}h："
+                + "、".join(stale[:8]) + suffix
+            )
+    return issues
+
+
+# ---------- 检查三：launchd 期望状态 ----------
 
 def loaded_services(domains: tuple[str, ...]) -> dict[str, int]:
     """读取指定域的服务表，返回 label -> pid（0 表示已加载未运行）。"""
@@ -191,6 +246,14 @@ def main() -> int:
     sections: list[tuple[str, list[str]]] = []
     sections.append(("~/rain 顶层结构", check_root(set(config.get("whitelist") or []))))
 
+    home_wl = set(config.get("homeWhitelist") or [])
+    if home_wl:
+        sections.append(("home 顶层结构", check_root(home_wl, HOME_ROOT, "home 顶层")))
+
+    staging = config.get("stagingDirs") or {}
+    if staging.get("dirs"):
+        sections.append(("暂存目录滞留", check_staging(staging)))
+
     user_services = loaded_services((f"gui/{UID}", f"user/{UID}"))
     system_services = loaded_services(("system",))
     if not user_services and not system_services:
@@ -233,7 +296,7 @@ def main() -> int:
         ok, detail = push(
             config,
             title,
-            body + "\n\n新增顶层目录须先报告确认，见 ~/rain/projs/agent-rules/AGENTS.macos.md。",
+            body + "\n\n新增顶层目录须先报告确认；暂存目录内容按规则移进 ~/rain。",
         )
         log(f"推送{'成功' if ok else '失败'}：{title} | {detail[:200]}")
         if not ok:
