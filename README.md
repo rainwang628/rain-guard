@@ -2,7 +2,7 @@
 
 下班前环境巡检。每日 17:30 由 launchd（`com.rain.rain-root-guard`）跑一次，覆盖六块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度。有异常才推送 PushPlus 微信，正常静默；同一组异常不重复推送。
 
-代码仓库：`https://github.com/rainwang628/rain-root-guard`（私有）。`guard.log`、`state.json`、`launchd.*.log` 属运行时产物，由 `.gitignore` 排除；换机后先按本文件部署，首次运行会自动建立新的 state 基线。
+代码仓库：`https://github.com/rainwang628/rain-root-guard`（公开）。`guard.log`、`state.json`、`launchd.*.log` 属运行时产物，由 `.gitignore` 排除；换机后先按本文件部署，首次运行会自动建立新的 state 基线。
 
 ## 检查项
 
