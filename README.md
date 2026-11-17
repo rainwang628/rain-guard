@@ -1,6 +1,6 @@
 # rain-root-guard
 
-下班前环境巡检。每日 17:30 由 launchd（`com.rain.rain-root-guard`）跑一次，覆盖七块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度、本地补丁（`patches/`）长期未动复核。有异常才推送 PushPlus 微信，正常静默；同一组异常不重复推送。
+下班前环境巡检。每日 17:30 由 launchd（`com.rain.rain-root-guard`）跑一次，覆盖七块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度、本地补丁（`patches/`）长期未动复核。有异常才推送：走统一推送网关的 `todo` 类，先到 iPhone 通知栏，1 分钟没处理再补一条微信；正常静默，同一组异常不重复推送。
 
 代码仓库：`https://github.com/rainwang628/rain-root-guard`（公开）。换机后先按本文件部署，首次运行会自动建立新的 state 基线。
 
@@ -48,7 +48,7 @@
 
 ## 背景
 
-`~/rain` 顶层是核心结构：新增顶层目录须先报告确认（`AGENTS.macos.md` 硬性禁令，规则 V7.3 起）。宿主应用（DSH、WorkBuddy 等）会按自己的固定路径静默建目录，不看规则；launchd 侧则会出现被静默 bootout、被系统后台项拦截、服务崩溃后无人发现的情况。本服务负责在没人看的时候发现并告知。V1.2 把同一套 diff 机制扩到 home 顶层，兜住「新装应用在 `~` 下自建目录」，并按「暂存目录不留文件」的既有要求检查滞留文件。暂存巡检从 TCC 保护的 `~/Downloads`／`~/Documents` 迁到 `~/rain/tmp/inbox/`，把「下载即暂存、超时提醒」的治理留在无需系统授权的路径内。V1.3 把同一套巡检扩到项目成熟度：`apps/` 正式项目盯 git 同步，`racing/` 赛马项目盯静默活跃度，让「该提交没提交」和「赛马该清理」在下班前一次报出来。V1.4 新增 `patches/` 本地补丁一组，按更长的静默阈值提示长期未动的复核候选，不查 git 同步（这类不建仓库）。
+`~/rain` 顶层是核心结构：新增顶层目录须先报告确认（`AGENTS.macos.md` 硬性禁令，规则 V7.3 起）。宿主应用（DSH、WorkBuddy 等）会按自己的固定路径静默建目录，不看规则；launchd 侧则会出现被静默 bootout、被系统后台项拦截、服务崩溃后无人发现的情况。本服务负责在没人看的时候发现并告知。V1.2 把同一套 diff 机制扩到 home 顶层，兜住「新装应用在 `~` 下自建目录」，并按「暂存目录不留文件」的既有要求检查滞留文件。暂存巡检从 TCC 保护的 `~/Downloads`／`~/Documents` 迁到 `~/rain/tmp/inbox/`，把「下载即暂存、超时提醒」的治理留在无需系统授权的路径内。V1.3 把同一套巡检扩到项目成熟度：`apps/` 正式项目盯 git 同步，`racing/` 赛马项目盯静默活跃度，让「该提交没提交」和「赛马该清理」在下班前一次报出来。V1.4 新增 `patches/` 本地补丁一组，按更长的静默阈值提示长期未动的复核候选，不查 git 同步（这类不建仓库）。V1.5 把推送出口从直连 PushPlus 改成统一网关 `push-gateway`（`todo` 类，凭据只留在网关一处），并让 `gatewayScript` 支持 `~` 展开。
 
 ## 文件
 
@@ -64,7 +64,7 @@
 
 ```bash
 python3 rain_root_guard.py --dry-run                            # 看七块结果，不推送
-python3 rain_root_guard.py --test-push                          # 验证微信通道
+python3 rain_root_guard.py --test-push                          # 验证推送通道（会真发一条 todo）
 RAIN_ROOT=/tmp/fake-root RAIN_HOME_ROOT=/tmp/fake-home \
   RAIN_STAGING_DIRS=/tmp/fake-downloads,/tmp/fake-desktop \
   RAIN_APPS_DIR=/tmp/fake-apps RAIN_RACING_DIR=/tmp/fake-racing \

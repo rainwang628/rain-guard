@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 文件版本：V1.4｜更新日期：2026-11-16
+# 文件版本：V1.5｜更新日期：2026-11-17
 # 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons + 项目成熟度巡检。有异常才推送，无异常静默。
 """巡检七块：
 1. ~/rain 顶层可见条目是否偏离 whitelist；
@@ -49,35 +49,26 @@ def load_json(path: Path, default):
         return default
 
 
-def resolve_token(config: dict) -> str:
-    token = (config.get("pushplusToken") or "").strip()
-    if token:
-        return token
-    ref = config.get("pushplusConfigPath")
-    if ref:
-        other = load_json(Path(os.path.expanduser(ref)), {})
-        return (other.get("pushplusToken") or "").strip()
-    return ""
+DEFAULT_NODE = "/Applications/DS Bot.app/Contents/Resources/primary-runtime/dependencies/node/bin/node"
+DEFAULT_GATEWAY_SCRIPT = os.path.expanduser("~/rain/projs/services/push-gateway/push.mjs")
 
 
 def push(config: dict, title: str, content: str) -> tuple[bool, str]:
-    token = resolve_token(config)
-    if not token:
-        return False, "pushplusToken 未配置"
-    payload = json.dumps(
-        {"token": token, "title": title, "content": content, "template": "txt"}
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        "https://www.pushplus.plus/send",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-    )
+    """统一推送后台：~/rain/projs/services/push-gateway/push.mjs。
+
+    巡检发现异常属于「要你处理」，用 todo 类：先到通知栏，1 分钟没点开补微信。
+    """
+    script = os.path.expanduser(str(config.get("gatewayScript") or DEFAULT_GATEWAY_SCRIPT))
+    node = str(config.get("gatewayNode") or DEFAULT_NODE)
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            body = response.read().decode("utf-8", "replace")
-            return response.status == 200 and '"code":200' in body.replace(" ", ""), body
-    except OSError as exc:
-        return False, str(exc)
+        result = subprocess.run(
+            [node, script, "--title", title, "--body", content, "--group", "guard", "--kind", "todo"],
+            capture_output=True, text=True, timeout=40,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, "gateway 调用失败：%s" % exc
+    detail = ((result.stdout or "") + (result.stderr or "")).strip()[:300]
+    return result.returncode == 0, detail
 
 
 def save_state(issues: list[str]) -> None:

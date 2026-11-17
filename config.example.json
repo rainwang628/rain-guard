@@ -1,17 +1,24 @@
 {
-  "whitelist": ["agents.md", "hosts", "lab", "memory", "projs", "softs", "tmp"],
+  "whitelist": ["agents.md", "config", "hosts", "memory", "projs", "softs", "tmp"],
   "homeWhitelist": ["Applications", "Desktop", "Documents", "Downloads", "Library", "Movies", "Music", "Pictures", "Public", "jiaojiao", "rain"],
   "stagingDirs": {
     "dirs": ["~/rain/tmp/inbox"],
     "graceHours": 24,
     "ignore": [".DS_Store", ".localized"]
   },
-  "pushplusConfigPath": "~/rain/projs/services/aa-notify/config.json",
-  "pushplusToken": "",
+  "gatewayScript": "~/rain/projs/services/push-gateway/push.mjs",
+  "gatewayNode": "/Applications/DS Bot.app/Contents/Resources/primary-runtime/dependencies/node/bin/node",
   "launchdAgents": {
     "dir": "~/Library/LaunchAgents",
     "expected": {
-      "com.rain.aa-notify": "run"
+      "com.rain.aa-notify": "run",
+      "com.rain.apiwatch.gateway": "run",
+      "com.rain.apiwatch.watchd": "run",
+      "com.rain.deepseek-tunnel": "loaded",
+      "com.rain.qianji-readonly.tunnel": "run",
+      "com.rain.qianji-readonly.upstream": "run",
+      "com.rain.rain-root-guard": "loaded",
+      "com.rain.structure-snapshot": "loaded"
     }
   },
   "launchdDaemons": {
