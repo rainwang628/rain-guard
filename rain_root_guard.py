@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 文件版本：V1.5｜更新日期：2026-11-17
+# 文件版本：V1.6｜更新日期：2026-11-17
 # 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons + 项目成熟度巡检。有异常才推送，无异常静默。
 """巡检七块：
 1. ~/rain 顶层可见条目是否偏离 whitelist；
@@ -295,7 +295,10 @@ def check_formal_projects(block: dict) -> list[str]:
 
     for project in projects:
         if not is_git_repo(project):
-            issues.append(f"{project.name} 非 git 仓库（未纳管，判断是否需发远端）")
+            issues.append(f"{project.name} 非 git 仓库：apps/ 要求 git + 远端 + 已推送，补齐或挪去 patches/")
+            continue
+        if not git_info(project, "remote"):
+            issues.append(f"{project.name} 没有远端仓库（apps/ 要求建远端并推送）")
             continue
         dirty = git_info(project, "status", "--porcelain")
         if dirty:
