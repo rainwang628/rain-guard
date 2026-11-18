@@ -1,8 +1,8 @@
-# rain-root-guard
+# rain-guard
 
-下班前环境巡检。每日 17:30 由 launchd（`com.rain.rain-root-guard`）跑一次，覆盖七块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度、本地补丁（`patches/`）长期未动复核。有异常才推送：走统一推送网关的 `todo` 类，先到 iPhone 通知栏，1 分钟没处理再补一条微信；正常静默，同一组异常不重复推送。
+下班前环境巡检。每日 17:30 由 launchd（`com.rain.guard`）跑一次，覆盖七块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度、本地补丁（`patches/`）长期未动复核。有异常才推送：走统一推送网关的 `todo` 类，先到 iPhone 通知栏，1 分钟没处理再补一条微信；正常静默，同一组异常不重复推送。
 
-代码仓库：`https://github.com/rainwang628/rain-root-guard`（公开）。换机后先按本文件部署，首次运行会自动建立新的 state 基线。
+代码仓库：`https://github.com/rainwang628/rain-guard`（公开）。换机后先按本文件部署，首次运行会自动建立新的 state 基线。
 
 ## 检查项
 
@@ -54,31 +54,31 @@
 
 | 文件 | 说明 |
 |---|---|
-| `rain_root_guard.py` | 巡检脚本；`--dry-run` 只打印不推送，`--test-push` 发测试消息 |
+| `guard.py` | 巡检脚本；`--dry-run` 只打印不推送，`--test-push` 发测试消息 |
 | `config.example.json` | 配置模板；首次部署时 `cp config.example.json config.json` 再按本机补基线 |
-| `com.rain.rain-root-guard.plist` | launchd 定义（每日 17:30），已复制到 `~/Library/LaunchAgents/` |
+| `com.rain.guard.plist` | launchd 定义（每日 17:30），已复制到 `~/Library/LaunchAgents/` |
 | `state.json` | 上次的异常集合，防重复打扰；也用于判断「已恢复」 |
 | `guard.log`、`launchd.*.log` | 日志 |
 
 ## 手动使用
 
 ```bash
-python3 rain_root_guard.py --dry-run                            # 看七块结果，不推送
-python3 rain_root_guard.py --test-push                          # 验证推送通道（会真发一条 todo）
+python3 guard.py --dry-run                            # 看七块结果，不推送
+python3 guard.py --test-push                          # 验证推送通道（会真发一条 todo）
 RAIN_ROOT=/tmp/fake-root RAIN_HOME_ROOT=/tmp/fake-home \
   RAIN_STAGING_DIRS=/tmp/fake-downloads,/tmp/fake-desktop \
   RAIN_APPS_DIR=/tmp/fake-apps RAIN_RACING_DIR=/tmp/fake-racing \
-  python3 rain_root_guard.py --dry-run                          # 演练异常（全假路径，不碰真实目录）
+  python3 guard.py --dry-run                          # 演练异常（全假路径，不碰真实目录）
 ```
 
 可用环境变量覆盖，便于演练：`RAIN_ROOT`、`RAIN_HOME_ROOT`、`RAIN_STAGING_DIRS`（逗号分隔）、`RAIN_APPS_DIR`、`RAIN_RACING_DIR`、`RAIN_AGENT_DIR`、`RAIN_DAEMON_DIR`、`RAIN_CONFIG`、`RAIN_STATE_PATH`。演练时另配 `RAIN_CONFIG` 指向只含白名单段的假配置，可跳过 launchd 检查。
 
-**验证真实权限时不要用会话内 `--dry-run`**：宿主会话派生的 python3 的 TCC 归属是宿主进程，会假报「巡检受限」。让 launchd 自己跑再读结果：`launchctl kickstart -k gui/$(id -u)/com.rain.rain-root-guard`，然后看 `guard.log` 与 `state.json`。
+**验证真实权限时不要用会话内 `--dry-run`**：宿主会话派生的 python3 的 TCC 归属是宿主进程，会假报「巡检受限」。让 launchd 自己跑再读结果：`launchctl kickstart -k gui/$(id -u)/com.rain.guard`，然后看 `guard.log` 与 `state.json`。
 
 ## 部署与回滚
 
-- 源码在 `~/rain/projs/apps/rain-root-guard`，部署根在 `~/rain/projs/services/rain-root-guard`；改代码只改源码，再 `./deploy.sh rain-root-guard` 单向推送，**禁止在部署根手改代码**。
-- 部署：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.rain.rain-root-guard.plist`
-- 回滚：`launchctl bootout gui/$(id -u)/com.rain.rain-root-guard && rm ~/Library/LaunchAgents/com.rain.rain-root-guard.plist`
+- 源码在 `~/rain/projs/apps/rain-guard`，部署根在 `~/rain/projs/services/rain-guard`；改代码只改源码，再 `./deploy.sh rain-guard` 单向推送，**禁止在部署根手改代码**。
+- 部署：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.rain.guard.plist`
+- 回滚：`launchctl bootout gui/$(id -u)/com.rain.guard && rm ~/Library/LaunchAgents/com.rain.guard.plist`
 - 基线变更：rain 顶层白名单改 `config.json` 并同步 `AGENTS.macos.md`；home 白名单与暂存目录改 `config.json` 的 `homeWhitelist` / `stagingDirs`；launchd 基线改 `launchdAgents` / `launchdDaemons`，新增服务时把对应 Label 加进去，否则会报「新增未登记」；项目巡检阈值改 `formalProjects` / `racingProjects` / `patchProjects`。
 - 改脚本或 `config.json` 无需重载 plist；改 plist 的触发时间需 `bootout` + `bootstrap`。V1.3 未改 plist，部署后原有的 17:30 任务继续执行新脚本。

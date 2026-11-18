@@ -3,14 +3,14 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.rain.rain-root-guard</string>
+	<string>com.rain.guard</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/usr/bin/python3</string>
-		<string>/Users/1808913326qq.com/rain/projs/services/rain-root-guard/rain_root_guard.py</string>
+		<string>/Users/1808913326qq.com/rain/projs/services/rain-guard/guard.py</string>
 	</array>
 	<key>WorkingDirectory</key>
-	<string>/Users/1808913326qq.com/rain/projs/services/rain-root-guard</string>
+	<string>/Users/1808913326qq.com/rain/projs/services/rain-guard</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>
@@ -21,8 +21,8 @@
 	<key>ProcessType</key>
 	<string>Background</string>
 	<key>StandardOutPath</key>
-	<string>/Users/1808913326qq.com/rain/projs/services/rain-root-guard/launchd.out.log</string>
+	<string>/Users/1808913326qq.com/rain/projs/services/rain-guard/launchd.out.log</string>
 	<key>StandardErrorPath</key>
-	<string>/Users/1808913326qq.com/rain/projs/services/rain-root-guard/launchd.err.log</string>
+	<string>/Users/1808913326qq.com/rain/projs/services/rain-guard/launchd.err.log</string>
 </dict>
 </plist>

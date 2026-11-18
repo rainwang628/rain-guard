@@ -13,10 +13,9 @@
       "com.rain.aa-notify": "run",
       "com.rain.apiwatch.gateway": "run",
       "com.rain.apiwatch.watchd": "run",
-      "com.rain.deepseek-tunnel": "loaded",
       "com.rain.qianji-readonly.tunnel": "run",
       "com.rain.qianji-readonly.upstream": "run",
-      "com.rain.rain-root-guard": "loaded",
+      "com.rain.guard": "loaded",
       "com.rain.structure-snapshot": "loaded"
     }
   },

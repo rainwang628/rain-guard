@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 文件版本：V1.7｜更新日期：2026-11-18
+# 文件版本：V1.8｜更新日期：2026-11-18
 # 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons + 项目成熟度巡检。有异常才推送，无异常静默。
 """巡检七块：
 1. ~/rain 顶层可见条目是否偏离 whitelist；
@@ -429,7 +429,7 @@ def render_body(sections: list[tuple[str, list[str]]]) -> str:
 def main() -> int:
     config = load_json(CONFIG_PATH, {})
     if "--test-push" in sys.argv:
-        ok, detail = push(config, "rain-root-guard 通道测试", "收到这条说明巡检推送通道正常。")
+        ok, detail = push(config, "rain-guard 通道测试", "收到这条说明巡检推送通道正常。")
         print(ok, detail[:200])
         return 0 if ok else 1
 
