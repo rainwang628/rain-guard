@@ -6,8 +6,7 @@
     "graceHours": 24,
     "ignore": [".DS_Store", ".localized"]
   },
-  "gatewayScript": "~/rain/projs/services/push-gateway/push.mjs",
-  "gatewayNode": "/Applications/DS Bot.app/Contents/Resources/primary-runtime/dependencies/node/bin/node",
+  "notifyScript": "~/rain/projs/services/push-gateway/notify",
   "launchdAgents": {
     "dir": "~/Library/LaunchAgents",
     "expected": {

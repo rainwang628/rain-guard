@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 文件版本：V1.6｜更新日期：2026-11-17
+# 文件版本：V1.7｜更新日期：2026-11-18
 # 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons + 项目成熟度巡检。有异常才推送，无异常静默。
 """巡检七块：
 1. ~/rain 顶层可见条目是否偏离 whitelist；
@@ -49,24 +49,22 @@ def load_json(path: Path, default):
         return default
 
 
-DEFAULT_NODE = "/Applications/DS Bot.app/Contents/Resources/primary-runtime/dependencies/node/bin/node"
-DEFAULT_GATEWAY_SCRIPT = os.path.expanduser("~/rain/projs/services/push-gateway/push.mjs")
+DEFAULT_NOTIFY = os.path.expanduser("~/rain/projs/services/push-gateway/notify")
 
 
 def push(config: dict, title: str, content: str) -> tuple[bool, str]:
-    """统一推送后台：~/rain/projs/services/push-gateway/push.mjs。
+    """统一推送入口：~/rain/projs/services/push-gateway/notify。
 
     巡检发现异常属于「要你处理」，用 todo 类：先到通知栏，1 分钟没点开补微信。
     """
-    script = os.path.expanduser(str(config.get("gatewayScript") or DEFAULT_GATEWAY_SCRIPT))
-    node = str(config.get("gatewayNode") or DEFAULT_NODE)
+    notify = os.path.expanduser(str(config.get("notifyScript") or DEFAULT_NOTIFY))
     try:
         result = subprocess.run(
-            [node, script, "--title", title, "--body", content, "--group", "guard", "--kind", "todo"],
+            [notify, "--title", title, "--body", content, "--group", "guard", "--kind", "todo"],
             capture_output=True, text=True, timeout=40,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return False, "gateway 调用失败：%s" % exc
+        return False, "notify 调用失败：%s" % exc
     detail = ((result.stdout or "") + (result.stderr or "")).strip()[:300]
     return result.returncode == 0, detail
 
@@ -381,6 +379,53 @@ def check_patch_projects(block: dict) -> list[str]:
     return []
 
 
+# ---------- 通知排版：只列异常、按紧急度排序，正常项折叠 ----------
+
+# 服务掉线最急，其次是目录基线，项目成熟度类靠后。
+SECTION_RANK = (
+    ("LaunchAgent", 0), ("LaunchDaemon", 0), ("launchd", 0),
+    ("~/rain", 1), ("home 顶层", 1), ("暂存目录", 2),
+    ("正式项目", 3), ("赛马项目", 4), ("本地补丁", 5),
+)
+
+
+def section_rank(name: str) -> int:
+    for prefix, rank in SECTION_RANK:
+        if prefix in name:
+            return rank
+    return 9
+
+
+def render_issue(line: str) -> list[str]:
+    """把「前缀：a、b、c」这类长串拆成小标题 + 逐项；短句保持一行。"""
+    head, sep, tail = line.partition("：")
+    if sep and "、" in tail and len(line) > 36:
+        parts = [p.strip() for p in re.split(r"[、；]", tail) if p.strip()]
+        rows = [f"{head.rstrip()} — {len(parts)} 项"]
+        rows.extend(f"  · {p}" for p in parts[:12])
+        if len(parts) > 12:
+            rows.append(f"  · 另有 {len(parts) - 12} 项未列出")
+        return rows
+    return [f"· {line}"]
+
+
+def render_body(sections: list[tuple[str, list[str]]]) -> str:
+    """异常分块按紧急度列出，正常分块只留一行计数。"""
+    abnormal = [(name, block) for name, block in sections if block]
+    abnormal.sort(key=lambda item: section_rank(item[0]))
+    lines: list[str] = []
+    for name, block in abnormal:
+        lines.append(name)
+        for issue in block:
+            lines.extend(render_issue(issue))
+    normal = len(sections) - len(abnormal)
+    if normal:
+        lines.append(f"其余 {normal} 块正常")
+    # PushPlus 走 markdown 模板：单个 \n 在微信里会被并成一段，行尾两个空格才是硬换行；
+    # Bark 只当行尾空白处理，不影响显示。
+    return "  \n".join(lines) + "  "
+
+
 def main() -> int:
     config = load_json(CONFIG_PATH, {})
     if "--test-push" in sys.argv:
@@ -413,10 +458,7 @@ def main() -> int:
             if not block:
                 continue
             directory = Path(os.path.expanduser(os.environ.get(env) or block.get("dir") or ""))
-            sections.append(
-                (f"{kind}（{directory}）",
-                 check_launchd(kind, directory, block.get("expected") or {}, svc))
-            )
+            sections.append((kind, check_launchd(kind, directory, block.get("expected") or {}, svc)))
 
     formal = config.get("formalProjects") or {}
     if formal.get("enabled", True):
@@ -431,11 +473,8 @@ def main() -> int:
         sections.append(("本地补丁 patches/", check_patch_projects(patch)))
 
     issues = [line for _, block in sections for line in block]
-    body = "\n".join(
-        f"【{name}】\n" + ("\n".join(f"· {line}" for line in block) if block else "· 正常")
-        for name, block in sections
-    )
     title = f"下班前巡检：{len(issues)} 项异常" if issues else "下班前巡检：全部正常"
+    body = render_body(sections) if issues else ""
 
     if dry:
         print(f"[dry-run] {title}\n{body}")
@@ -451,11 +490,7 @@ def main() -> int:
         return 0
 
     if issues:
-        ok, detail = push(
-            config,
-            title,
-            body + "\n\n新增顶层目录须先报告确认；暂存目录内容按规则移进 ~/rain。",
-        )
+        ok, detail = push(config, title, body)
         log(f"推送{'成功' if ok else '失败'}：{title} | {detail[:200]}")
         if not ok:
             return 1
