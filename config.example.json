@@ -1,19 +1,43 @@
 {
-  "whitelist": ["agents.md", "config", "hosts", "memory", "projs", "softs", "tmp"],
-  "homeWhitelist": ["Applications", "Desktop", "Documents", "Downloads", "Library", "Movies", "Music", "Pictures", "Public", "jiaojiao", "rain"],
+  "whitelist": [
+    "agents.md",
+    "config",
+    "hosts",
+    "memory",
+    "projs",
+    "softs",
+    "tmp"
+  ],
+  "homeWhitelist": [
+    "Applications",
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "Library",
+    "Movies",
+    "Music",
+    "Pictures",
+    "Public",
+    "jiaojiao",
+    "rain"
+  ],
   "stagingDirs": {
-    "dirs": ["~/rain/tmp/inbox"],
+    "dirs": [
+      "~/rain/tmp/inbox"
+    ],
     "graceHours": 24,
-    "ignore": [".DS_Store", ".localized"]
+    "ignore": [
+      ".DS_Store",
+      ".localized"
+    ]
   },
   "notifyScript": "~/rain/projs/services/push-gateway/notify",
   "launchdAgents": {
     "dir": "~/Library/LaunchAgents",
     "expected": {
       "com.rain.aa-notify": "run",
-      "com.rain.apiwatch.gateway": "run",
-      "com.rain.apiwatch.watchd": "run",
-      "com.rain.qianji-readonly.tunnel": "run",
+      "com.rain.apiwatch.gateway": "present",
+      "com.rain.apiwatch.watchd": "present",
       "com.rain.qianji-readonly.upstream": "run",
       "com.rain.guard": "loaded",
       "com.rain.structure-snapshot": "loaded"
