@@ -284,6 +284,8 @@ def check_formal_projects(block: dict) -> list[str]:
         return [f"正式项目目录不存在：{apps_dir}"]
 
     stale_days = float(block.get("staleDays", 3))
+    # 豁免名单：已退场但按要求保留源码的本地项目，不再报项目卫生问题
+    ignore = set(block.get("ignore") or [])
     now = datetime.now().timestamp()
     issues: list[str] = []
     try:
@@ -292,6 +294,8 @@ def check_formal_projects(block: dict) -> list[str]:
         return [f"扫描正式项目目录失败：{exc}"]
 
     for project in projects:
+        if project.name in ignore:
+            continue
         if not is_git_repo(project):
             issues.append(f"{project.name} 非 git 仓库：apps/ 要求 git + 远端 + 已推送，补齐或挪去 patches/")
             continue

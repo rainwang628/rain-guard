@@ -28,7 +28,7 @@
 | `stagingDirs.dirs` | `~/rain/tmp/inbox` | 浏览器默认下载路径改到 `~/rain/tmp/inbox/`；`~/Downloads`／`~/Documents`／`~/Desktop` 全部移出巡检（三者均受 TCC 保护，需 FDA 才能读） |
 | `stagingDirs.graceHours` | `24` | 宽限期，刚下载的文件不报；设 `0` 则出现即报 |
 | `stagingDirs.ignore` | `.DS_Store`、`.localized` | 隐藏项本就跳过；这里只列需要额外忽略的名字 |
-| `formalProjects` | `staleDays: 3`，`dir: ~/rain/projs/apps` | 正式项目巡检；`enabled: false` 停用 |
+| `formalProjects` | `staleDays: 3`，`dir: ~/rain/projs/apps`，`ignore: []` | 正式项目巡检；`enabled: false` 停用；`ignore` 列要豁免的项目名（已退场但按要求保留源码的，如 `aa-notify`） |
 | `racingProjects` | `staleDays: 30`，`activeDays: 7`，`dir: ~/rain/projs/racing` | 赛马项目巡检；两档之间（8–29 天）不报，避免中间态天天打扰 |
 | `patchProjects` | `staleDays: 60`，`dir: ~/rain/projs/patches` | 本地补丁巡检；阈值比赛马长，只报长期未动的复核候选 |
 

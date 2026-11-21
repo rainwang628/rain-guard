@@ -51,7 +51,8 @@
   "formalProjects": {
     "enabled": true,
     "dir": "~/rain/projs/apps",
-    "staleDays": 3
+    "staleDays": 3,
+    "ignore": []
   },
   "racingProjects": {
     "enabled": true,
