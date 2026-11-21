@@ -6,7 +6,9 @@
     "memory",
     "projs",
     "softs",
-    "tmp"
+    "teams",
+    "tmp",
+    "reports"
   ],
   "homeWhitelist": [
     "Applications",
@@ -35,7 +37,6 @@
   "launchdAgents": {
     "dir": "~/Library/LaunchAgents",
     "expected": {
-      "com.rain.aa-notify": "run",
       "com.rain.apiwatch.gateway": "present",
       "com.rain.apiwatch.watchd": "present",
       "com.rain.qianji-readonly.upstream": "run",
