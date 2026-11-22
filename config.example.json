@@ -64,5 +64,32 @@
     "enabled": true,
     "dir": "~/rain/projs/patches",
     "staleDays": 60
+  },
+  "labProjects": {
+    "enabled": true,
+    "dir": "~/rain/projs/lab",
+    "staleDays": 60
+  },
+  "upstreamProjects": {
+    "enabled": true,
+    "dir": "~/rain/projs/upstream",
+    "staleDays": 90
+  },
+  "archiveProjects": {
+    "enabled": true,
+    "dir": "~/rain/projs/archive"
+  },
+  "unregisteredProjects": {
+    "enabled": true,
+    "registry": [
+      "apps",
+      "racing",
+      "patches",
+      "services",
+      "upstream",
+      "lab",
+      "archive",
+      "agent-rules"
+    ]
   }
 }

@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-# 文件版本：V1.8｜更新日期：2026-11-18
+# 文件版本：V1.9｜更新日期：2026-11-22
 # 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons + 项目成熟度巡检。有异常才推送，无异常静默。
-"""巡检七块：
+"""巡检十一块：
 1. ~/rain 顶层可见条目是否偏离 whitelist；
 2. home 顶层可见条目是否偏离 homeWhitelist（兜住宿主应用静默建目录）；
 3. Downloads / Desktop 等暂存目录是否有超期滞留文件；
 4. 关键 launchd 任务是否在位、已加载、在运行（用户级 LaunchAgents 与第三方 LaunchDaemons）；
 5. 正式项目（apps/）：git 仓库逐个查未提交改动、未推送提交、超期未提交；
 6. 赛马项目（racing/）：按最近提交/修改时间算静默天数，分可清理候选与可跟进两档；
-7. 本地补丁（patches/）：自用、不交付、不建仓库，按最近活动时间提示长期未动的复核候选。
-任一异常走 PushPlus 推送；与上次异常集合相同则不重复打扰。手动调试见 README。
+7. 本地补丁（patches/）：自用、不交付、不建仓库；按最近活动时间提示长期未动的复核候选，自带 .git 的另查未提交改动；
+8. lab（lab/）：实验目录按最近活动时间提示 60 天未动的可清理候选，自带 .git 的另查未提交改动；
+9. upstream（upstream/）：第三方仓库只报未提交改动与 90 天无活动，不查未推送/落后远端；
+10. 归档（archive/）：只报未提交改动与出现新提交（HEAD 变化；首次见到只播种不报）；
+11. 未登记分类：~/rain/projs 顶层目录超出登记集合时提示。
+任一异常走统一推送通道；与上次异常集合相同则不重复打扰。手动调试见 README。
 """
 
 from __future__ import annotations
@@ -69,10 +73,14 @@ def push(config: dict, title: str, content: str) -> tuple[bool, str]:
     return result.returncode == 0, detail
 
 
-def save_state(issues: list[str]) -> None:
+def save_state(issues: list[str], archive_heads: dict | None = None) -> None:
+    payload = {
+        "issues": issues,
+        "updated": datetime.now().isoformat(timespec="seconds"),
+        "archiveHeads": dict(archive_heads or {}),
+    }
     STATE_PATH.write_text(
-        json.dumps({"issues": issues, "updated": datetime.now().isoformat(timespec="seconds")},
-                   ensure_ascii=False, indent=1),
+        json.dumps(payload, ensure_ascii=False, indent=1),
         encoding="utf-8",
     )
 
@@ -356,7 +364,10 @@ def check_racing_projects(block: dict) -> list[str]:
 
 
 def check_patch_projects(block: dict) -> list[str]:
-    """patches/ 下的本地补丁：自用、不交付、不建仓库；只提示长期未动的复核候选。"""
+    """patches/ 下的本地补丁：自用、不交付、不建仓库；只提示长期未动的复核候选。
+
+    自带 .git 的项目另查工作区是否脏——无仓库、无远端都不算异常，不查未推送/落后远端。
+    """
     patch_dir = Path(os.path.expanduser(
         os.environ.get("RAIN_PATCH_DIR") or block.get("dir") or str(ROOT / "projs" / "patches")
     ))
@@ -365,6 +376,7 @@ def check_patch_projects(block: dict) -> list[str]:
 
     stale_days = float(block.get("staleDays", 60))
     now = datetime.now().timestamp()
+    issues: list[str] = []
     stale: list[str] = []
     try:
         projects = sorted(p for p in patch_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
@@ -372,6 +384,10 @@ def check_patch_projects(block: dict) -> list[str]:
         return [f"扫描本地补丁目录失败：{exc}"]
 
     for project in projects:
+        if (project / ".git").exists():
+            dirty = git_info(project, "status", "--porcelain")
+            if dirty:
+                issues.append(f"{project.name} 有未提交改动（{len(dirty.splitlines())} 项）")
         ts, source = latest_activity(project)
         if ts == 0.0:
             continue
@@ -379,7 +395,149 @@ def check_patch_projects(block: dict) -> list[str]:
         if idle_days >= stale_days:
             stale.append(f"{project.name}（{int(idle_days)} 天未动，按{source}）")
     if stale:
-        return [f"本地补丁长期未动、可复核是否仍需要（≥{int(stale_days)}天）：" + "、".join(stale)]
+        issues.append(f"本地补丁长期未动、可复核是否仍需要（≥{int(stale_days)}天）：" + "、".join(stale))
+    return issues
+
+
+# ---------- 检查八：lab（实验目录） ----------
+
+def check_lab_projects(block: dict) -> list[str]:
+    """lab/ 下的实验目录：自用、不交付，只提示长期未动的可清理候选（与 patches 同口径）。
+
+    自带 .git 的项目另查工作区是否脏——无仓库、无远端都不算异常，不查未推送/落后远端。
+    """
+    lab_dir = Path(os.path.expanduser(
+        os.environ.get("RAIN_LAB_DIR") or block.get("dir") or str(ROOT / "projs" / "lab")
+    ))
+    if not lab_dir.is_dir():
+        return [f"lab 目录不存在：{lab_dir}"]
+
+    stale_days = float(block.get("staleDays", 60))
+    now = datetime.now().timestamp()
+    issues: list[str] = []
+    stale: list[str] = []
+    try:
+        projects = sorted(p for p in lab_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
+    except OSError as exc:
+        return [f"扫描 lab 目录失败：{exc}"]
+
+    for project in projects:
+        if (project / ".git").exists():
+            dirty = git_info(project, "status", "--porcelain")
+            if dirty:
+                issues.append(f"{project.name} 有未提交改动（{len(dirty.splitlines())} 项）")
+        ts, source = latest_activity(project)
+        if ts == 0.0:
+            continue
+        idle_days = (now - ts) / 86400
+        if idle_days >= stale_days:
+            stale.append(f"{project.name}（{int(idle_days)} 天未动，按{source}）")
+    if stale:
+        issues.append(f"lab 可清理候选（≥{int(stale_days)}天）：" + "、".join(stale))
+    return issues
+
+
+# ---------- 检查九：upstream（第三方仓库） ----------
+
+def check_upstream_projects(block: dict) -> list[str]:
+    """upstream/ 下的第三方仓库：只报未提交改动与超期无活动，不查未推送/落后远端。"""
+    upstream_dir = Path(os.path.expanduser(
+        os.environ.get("RAIN_UPSTREAM_DIR") or block.get("dir") or str(ROOT / "projs" / "upstream")
+    ))
+    if not upstream_dir.is_dir():
+        return [f"upstream 目录不存在：{upstream_dir}"]
+
+    stale_days = float(block.get("staleDays", 90))
+    now = datetime.now().timestamp()
+    issues: list[str] = []
+    try:
+        projects = sorted(p for p in upstream_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
+    except OSError as exc:
+        return [f"扫描 upstream 目录失败：{exc}"]
+
+    for project in projects:
+        if is_git_repo(project):
+            dirty = git_info(project, "status", "--porcelain")
+            if dirty:
+                issues.append(f"{project.name} 有未提交改动（{len(dirty.splitlines())} 项）")
+        ts, source = latest_activity(project)
+        if ts == 0.0:
+            continue
+        idle_days = (now - ts) / 86400
+        if idle_days >= stale_days:
+            issues.append(f"{project.name} 已 {int(idle_days)} 天无活动（阈值 {int(stale_days)} 天）")
+    return issues
+
+
+# ---------- 检查十：archive（归档） ----------
+
+def check_archive_projects(block: dict,
+                           known_heads: dict | None = None) -> tuple[list[str], dict]:
+    """archive/ 下的归档目录：只报未提交改动与出现新提交。
+
+    HEAD 记在 state 的 archiveHeads 里：首次见到只播种、不报；之后 HEAD 变化即报「归档项目出现新提交」。
+    目录为空、或只有 README.md 时不报；非 git 目录不参与新提交判断。
+    """
+    archive_dir = Path(os.path.expanduser(
+        os.environ.get("RAIN_ARCHIVE_DIR") or block.get("dir") or str(ROOT / "projs" / "archive")
+    ))
+    known = dict(known_heads or {})
+    if not archive_dir.is_dir():
+        return ([f"归档目录不存在：{archive_dir}"], known)
+
+    issues: list[str] = []
+    heads: dict[str, str] = {}
+    try:
+        projects = sorted(p for p in archive_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
+    except OSError as exc:
+        return ([f"扫描归档目录失败：{exc}"], known)
+
+    for project in projects:
+        try:
+            entries = [e for e in project.iterdir() if not e.name.startswith(".")]
+        except OSError:
+            continue
+        if not entries:
+            continue
+        if len(entries) == 1 and entries[0].is_file() and entries[0].name == "README.md":
+            continue
+        if not is_git_repo(project):
+            continue
+        dirty = git_info(project, "status", "--porcelain")
+        if dirty:
+            issues.append(f"{project.name} 有未提交改动（{len(dirty.splitlines())} 项）")
+        head = git_info(project, "rev-parse", "HEAD")
+        if head:
+            prev = known.get(project.name)
+            if prev and prev != head:
+                issues.append(f"{project.name} 归档项目出现新提交（{prev[:8]}→{head[:8]}）")
+            heads[project.name] = head
+    return issues, heads
+
+
+# ---------- 检查十一：projs 顶层未登记分类 ----------
+
+REGISTRY = {"apps", "racing", "patches", "services", "upstream", "lab", "archive", "agent-rules"}
+
+
+def check_unregistered_projects(block: dict) -> list[str]:
+    """~/rain/projs 顶层：目录超出登记集合时报「未登记分类」；文件与隐藏项不看。"""
+    projs = Path(os.path.expanduser(
+        os.environ.get("RAIN_PROJS_DIR") or str(ROOT / "projs")
+    ))
+    if not projs.is_dir():
+        return [f"projs 根目录不存在：{projs}"]
+
+    registry = set(block.get("registry") or REGISTRY)
+    try:
+        entries = sorted(p.name for p in projs.iterdir()
+                         if p.is_dir() and not p.name.startswith("."))
+    except OSError as exc:
+        return [f"扫描 projs 根目录失败：{exc}"]
+
+    unexpected = [name for name in entries if name not in registry]
+    if unexpected:
+        return ["未登记分类：" + "、".join(unexpected)]
     return []
 
 
@@ -390,6 +548,7 @@ SECTION_RANK = (
     ("LaunchAgent", 0), ("LaunchDaemon", 0), ("launchd", 0),
     ("~/rain", 1), ("home 顶层", 1), ("暂存目录", 2),
     ("正式项目", 3), ("赛马项目", 4), ("本地补丁", 5),
+    ("lab", 6), ("upstream", 7), ("归档", 8), ("未登记", 9),
 )
 
 
@@ -438,6 +597,7 @@ def main() -> int:
         return 0 if ok else 1
 
     dry = "--dry-run" in sys.argv
+    prev = load_json(STATE_PATH, {})
     sections: list[tuple[str, list[str]]] = []
     sections.append(("~/rain 顶层结构", check_root(set(config.get("whitelist") or []))))
 
@@ -476,6 +636,24 @@ def main() -> int:
     if patch.get("enabled", True):
         sections.append(("本地补丁 patches/", check_patch_projects(patch)))
 
+    lab = config.get("labProjects") or {}
+    if lab.get("enabled", True):
+        sections.append(("lab 项目 lab/", check_lab_projects(lab)))
+
+    upstream = config.get("upstreamProjects") or {}
+    if upstream.get("enabled", True):
+        sections.append(("upstream 第三方仓库", check_upstream_projects(upstream)))
+
+    archive = config.get("archiveProjects") or {}
+    archive_heads: dict[str, str] = {}
+    if archive.get("enabled", True):
+        archive_issues, archive_heads = check_archive_projects(archive, prev.get("archiveHeads") or {})
+        sections.append(("归档项目 archive/", archive_issues))
+
+    unregistered = config.get("unregisteredProjects") or {}
+    if unregistered.get("enabled", True):
+        sections.append(("未登记分类 projs/", check_unregistered_projects(unregistered)))
+
     issues = [line for _, block in sections for line in block]
     title = f"下班前巡检：{len(issues)} 项异常" if issues else "下班前巡检：全部正常"
     body = render_body(sections) if issues else ""
@@ -484,12 +662,11 @@ def main() -> int:
         print(f"[dry-run] {title}\n{body}")
         return 0
 
-    prev = load_json(STATE_PATH, {})
     if "issues" not in prev:  # V1.0 旧状态只有 root 差异，按空集比较并升级格式
         prev["issues"] = []
     if sorted(issues) == sorted(prev["issues"]):
-        if "updated" not in prev:
-            save_state(issues)
+        if "updated" not in prev or archive_heads != (prev.get("archiveHeads") or {}):
+            save_state(issues, archive_heads)
         log("无异常" if not issues else "异常未变化，跳过重复推送")
         return 0
 
@@ -500,7 +677,7 @@ def main() -> int:
             return 1
     else:
         log("已恢复正常，未推送")
-    save_state(issues)
+    save_state(issues, archive_heads)
     return 0
 
 
