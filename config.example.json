@@ -33,7 +33,7 @@
       ".localized"
     ]
   },
-  "notifyScript": "~/rain/projs/services/push-gateway/notify",
+  "notifyScript": "~/rain/projs/services/gw-push-gateway/notify",
   "launchdAgents": {
     "dir": "~/Library/LaunchAgents",
     "expected": {
