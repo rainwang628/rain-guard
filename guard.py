@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# 文件版本：V1.9｜更新日期：2026-11-22
-# 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons + 项目成熟度巡检。有异常才推送，无异常静默。
+# 文件版本：V1.10｜更新日期：2026-11-24
+# 下班前环境巡检：rain / home 顶层结构 + 暂存目录滞留 + LaunchAgents / LaunchDaemons + 项目成熟度巡检。有异常才推送，无异常静默；每周五 17:30 那次末尾追加一条周汇总（info 类，全绿也发）。
 """巡检十一块：
 1. ~/rain 顶层可见条目是否偏离 whitelist；
 2. home 顶层可见条目是否偏离 homeWhitelist（兜住宿主应用静默建目录）；
@@ -13,7 +13,7 @@
 9. upstream（upstream/）：第三方仓库只报未提交改动与 90 天无活动，不查未推送/落后远端；
 10. 归档（archive/）：只报未提交改动与出现新提交（HEAD 变化；首次见到只播种不报）；
 11. 未登记分类：~/rain/projs 顶层目录超出登记集合时提示。
-任一异常走统一推送通道；与上次异常集合相同则不重复打扰。手动调试见 README。
+任一异常走统一推送通道；与上次异常集合相同则不重复打扰。每周五 17:30 那次运行在末尾追加本周汇总，数据按天累积在 week-state.json，不改 state.json 结构。手动调试见 README。
 """
 
 from __future__ import annotations
@@ -24,13 +24,16 @@ import re
 import subprocess
 import sys
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CONFIG_PATH = Path(os.environ.get("RAIN_CONFIG", str(HERE / "config.json")))
 STATE_PATH = Path(os.environ.get("RAIN_STATE_PATH", str(HERE / "state.json")))
 LOG_PATH = HERE / "guard.log"
+WEEK_STATE_PATH = Path(os.environ.get("RAIN_WEEK_STATE", str(HERE / "week-state.json")))
+WEEKLY_WEEKDAY = 4  # 周五（date.weekday）
+WEEKLY_RETAIN_DAYS = 14
 
 ROOT = Path(os.environ.get("RAIN_ROOT", str(Path.home() / "rain")))
 HOME_ROOT = Path(os.environ.get("RAIN_HOME_ROOT", str(Path.home())))
@@ -56,15 +59,16 @@ def load_json(path: Path, default):
 DEFAULT_NOTIFY = os.path.expanduser("~/rain/projs/services/gw-push-gateway/notify")
 
 
-def push(config: dict, title: str, content: str) -> tuple[bool, str]:
+def push(config: dict, title: str, content: str, kind: str = "todo") -> tuple[bool, str]:
     """统一推送入口：~/rain/projs/services/gw-push-gateway/notify。
 
     巡检发现异常属于「要你处理」，用 todo 类：先到通知栏，1 分钟没点开补微信。
+    周汇总只告知、不需处理，调用时传 kind="info"，只到通知栏不补微信。
     """
     notify = os.path.expanduser(str(config.get("notifyScript") or DEFAULT_NOTIFY))
     try:
         result = subprocess.run(
-            [notify, "--title", title, "--body", content, "--group", "guard", "--kind", "todo"],
+            [notify, "--title", title, "--body", content, "--group", "guard", "--kind", kind],
             capture_output=True, text=True, timeout=40,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -83,6 +87,135 @@ def save_state(issues: list[str], archive_heads: dict | None = None) -> None:
         json.dumps(payload, ensure_ascii=False, indent=1),
         encoding="utf-8",
     )
+
+
+# ---------- 每周汇总 ----------
+
+def week_start(day: date) -> date:
+    """本周周一。"""
+    return day - timedelta(days=day.weekday())
+
+
+def load_week_state() -> dict:
+    raw = load_json(WEEK_STATE_PATH, {})
+    days = raw.get("days") if isinstance(raw, dict) else None
+    if not isinstance(days, dict):
+        days = {}
+    last = raw.get("lastSummaryWeek") if isinstance(raw, dict) else None
+    return {"version": 1, "days": dict(days), "lastSummaryWeek": last or None}
+
+
+def save_week_state(state: dict) -> None:
+    WEEK_STATE_PATH.write_text(
+        json.dumps(state, ensure_ascii=False, indent=1),
+        encoding="utf-8",
+    )
+
+
+def record_week_run(state: dict, issues: list[str], now: datetime) -> dict:
+    """记录一次巡检结果；只留最近 WEEKLY_RETAIN_DAYS 天。"""
+    state["days"][now.date().isoformat()] = {
+        "issues": list(issues),
+        "at": now.isoformat(timespec="seconds"),
+    }
+    cutoff = (now.date() - timedelta(days=WEEKLY_RETAIN_DAYS)).isoformat()
+    state["days"] = {k: v for k, v in state["days"].items() if k >= cutoff}
+    return state
+
+
+def weekly_due(state: dict, today: date) -> bool:
+    """周五且本周还没发过汇总。"""
+    return (
+        today.weekday() == WEEKLY_WEEKDAY
+        and state.get("lastSummaryWeek") != week_start(today).isoformat()
+    )
+
+
+def _day_issue_text(issues: list[str], limit: int = 3) -> str:
+    text = "；".join(issues[:limit])
+    if len(issues) > limit:
+        text += f"；等 {len(issues)} 项"
+    return text[:220]
+
+
+def weekly_summary(state: dict, today: date, current: list[str]) -> tuple[str, str]:
+    """本周（周一到今天）汇总的标题与正文；全绿也返回内容，不静默。"""
+    start = week_start(today)
+    span = f"{start.strftime('%m-%d')} ~ {today.strftime('%m-%d')}"
+    current_text = "全部正常" if not current else f"{len(current)} 项异常"
+    recorded: list[tuple[str, list[str]]] = []
+    day = start
+    while day <= today:
+        item = state.get("days", {}).get(day.isoformat())
+        if isinstance(item, dict):
+            recorded.append((day.strftime("%m-%d"), list(item.get("issues") or [])))
+        day += timedelta(days=1)
+    total = len(recorded)
+    green = sum(1 for _, issues in recorded if not issues)
+    bad = total - green
+    missing = (today.weekday() + 1) - total
+    missing_note = f"，另有 {missing} 天没有记录" if missing > 0 else ""
+    if total == 0:
+        return (
+            "本周巡检汇总：暂无记录",
+            f"本周（{span}）暂无巡检记录。\n当前状态：{current_text}。",
+        )
+    if bad == 0:
+        return (
+            f"本周巡检汇总：{total} 次全部正常",
+            f"本周 {total} 次巡检全部正常（{span}{missing_note}）。\n当前状态：{current_text}。",
+        )
+    lines = [f"本周（{span}）共巡检 {total} 次：{green} 次全部正常，{bad} 次有异常。", "异常记录："]
+    for label, issues in recorded:
+        if issues:
+            lines.append(f"· {label}（{len(issues)} 项）：{_day_issue_text(issues)}")
+    if missing > 0:
+        lines.append(f"另有 {missing} 天没有记录（未跑或数据缺失）。")
+    lines.append(f"当前状态：{current_text}。")
+    body = "\n".join(lines)[:1200]
+    return f"本周巡检汇总：{green} 正常 / {bad} 有异常", body
+
+
+def run_weekly(config: dict, issues: list[str], now: datetime | None = None) -> int:
+    """记录本次结果；周五且本周未发过时推一条汇总（info 类）。"""
+    now = now or datetime.now()
+    try:
+        state = record_week_run(load_week_state(), issues, now)
+        save_week_state(state)
+    except OSError as exc:
+        log(f"周记失败：{exc}")
+        return 0
+    today = now.date()
+    if not weekly_due(state, today):
+        return 0
+    title, body = weekly_summary(state, today, issues)
+    ok, detail = push(config, title, body, kind="info")
+    log(f"周报{'推送成功' if ok else '推送失败'}：{title} | {detail[:200]}")
+    if ok:
+        state["lastSummaryWeek"] = week_start(today).isoformat()
+        save_week_state(state)
+    return 0 if ok else 1
+
+
+def weekly_preview(issues: list[str], now: datetime | None = None) -> tuple[str, str]:
+    """只读预览：把本次结果并入内存副本后生成汇总，不落盘、不推送。"""
+    now = now or datetime.now()
+    state = record_week_run(load_week_state(), issues, now)
+    return weekly_summary(state, now.date(), issues)
+
+
+def preview_now() -> datetime:
+    """预览/测试用：--preview-date YYYY-MM-DD 替换日期，默认当前时间。"""
+    try:
+        if "--preview-date" in sys.argv:
+            i = sys.argv.index("--preview-date")
+            return datetime.combine(
+                date.fromisoformat(sys.argv[i + 1]),
+                datetime.now().time().replace(microsecond=0),
+            )
+    except (IndexError, ValueError):
+        pass
+    return datetime.now()
 
 
 def describe(path: Path) -> str:
@@ -658,8 +791,18 @@ def main() -> int:
     title = f"下班前巡检：{len(issues)} 项异常" if issues else "下班前巡检：全部正常"
     body = render_body(sections) if issues else ""
 
+    if "--weekly-preview" in sys.argv:
+        now = preview_now()
+        wtitle, wbody = weekly_preview(issues, now)
+        print(f"[weekly-preview] {wtitle}\n{wbody}")
+        return 0
+
     if dry:
         print(f"[dry-run] {title}\n{body}")
+        now = preview_now()
+        if now.date().weekday() == WEEKLY_WEEKDAY:
+            wtitle, wbody = weekly_preview(issues, now)
+            print(f"[dry-run 周报] {wtitle}\n{wbody}")
         return 0
 
     if "issues" not in prev:  # V1.0 旧状态只有 root 差异，按空集比较并升级格式
@@ -668,17 +811,18 @@ def main() -> int:
         if "updated" not in prev or archive_heads != (prev.get("archiveHeads") or {}):
             save_state(issues, archive_heads)
         log("无异常" if not issues else "异常未变化，跳过重复推送")
-        return 0
+        return run_weekly(config, issues)
 
     if issues:
         ok, detail = push(config, title, body)
         log(f"推送{'成功' if ok else '失败'}：{title} | {detail[:200]}")
-        if not ok:
-            return 1
+        rc = 0 if ok else 1
     else:
         log("已恢复正常，未推送")
+        rc = 0
     save_state(issues, archive_heads)
-    return 0
+    weekly_rc = run_weekly(config, issues)
+    return 0 if rc == 0 and weekly_rc == 0 else 1
 
 
 if __name__ == "__main__":

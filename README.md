@@ -1,6 +1,6 @@
 # rain-guard
 
-下班前环境巡检。每日 17:30 由 launchd（`com.rain.guard`）跑一次，覆盖十一块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度、本地补丁（`patches/`）长期未动复核、实验目录（`lab/`）可清理候选、第三方仓库（`upstream/`）未提交与无活动、归档（`archive/`）未提交与新提交、`~/rain/projs` 顶层未登记分类。有异常才推送：走统一推送网关的 `todo` 类，先到 iPhone 通知栏，1 分钟没处理再补一条微信；正常静默，同一组异常不重复推送。
+下班前环境巡检。每日 17:30 由 launchd（`com.rain.guard`）跑一次，覆盖十一块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度、本地补丁（`patches/`）长期未动复核、实验目录（`lab/`）可清理候选、第三方仓库（`upstream/`）未提交与无活动、归档（`archive/`）未提交与新提交、`~/rain/projs` 顶层未登记分类。有异常才推送：走统一推送网关的 `todo` 类，先到 iPhone 通知栏，1 分钟没处理再补一条微信；正常静默，同一组异常不重复推送。每周五 17:30 那次运行在末尾追加一条本周汇总（`info` 类，只到通知栏、不补微信；全绿也发）。
 
 代码仓库：`https://github.com/rainwang628/rain-guard`（公开）。换机后先按本文件部署，首次运行会自动建立新的 state 基线。
 
@@ -56,7 +56,23 @@
 
 ## 背景
 
-`~/rain` 顶层是核心结构：新增顶层目录须先报告确认（`AGENTS.macos.md` 硬性禁令，规则 V7.3 起）。宿主应用（DSH、WorkBuddy 等）会按自己的固定路径静默建目录，不看规则；launchd 侧则会出现被静默 bootout、被系统后台项拦截、服务崩溃后无人发现的情况。本服务负责在没人看的时候发现并告知。V1.2 把同一套 diff 机制扩到 home 顶层，兜住「新装应用在 `~` 下自建目录」，并按「暂存目录不留文件」的既有要求检查滞留文件。暂存巡检从 TCC 保护的 `~/Downloads`／`~/Documents` 迁到 `~/rain/tmp/inbox/`，把「下载即暂存、超时提醒」的治理留在无需系统授权的路径内。V1.3 把同一套巡检扩到项目成熟度：`apps/` 正式项目盯 git 同步，`racing/` 赛马项目盯静默活跃度，让「该提交没提交」和「赛马该清理」在下班前一次报出来。V1.4 新增 `patches/` 本地补丁一组，按更长的静默阈值提示长期未动的复核候选，不查 git 同步（这类不建仓库）。V1.5 把推送出口从直连 PushPlus 改成统一网关 `push-gateway`（`todo` 类，凭据只留在网关一处），并让 `gatewayScript` 支持 `~` 展开。 V1.6 把 `apps/` 的纳管要求收紧：非 git、没有远端都直接报不合格（合格项见 `~/rain/projs/README.md` 的「新增或迁移项目」后校验）。V1.7 优化通知排版：只列异常分块并按紧急度排序，同类长串逐项展开，正常项折叠为一行计数；异常集合与去重逻辑不变。
+`~/rain` 顶层是核心结构：新增顶层目录须先报告确认（`AGENTS.macos.md` 硬性禁令，规则 V7.3 起）。宿主应用（DSH、WorkBuddy 等）会按自己的固定路径静默建目录，不看规则；launchd 侧则会出现被静默 bootout、被系统后台项拦截、服务崩溃后无人发现的情况。本服务负责在没人看的时候发现并告知。V1.2 把同一套 diff 机制扩到 home 顶层，兜住「新装应用在 `~` 下自建目录」，并按「暂存目录不留文件」的既有要求检查滞留文件。暂存巡检从 TCC 保护的 `~/Downloads`／`~/Documents` 迁到 `~/rain/tmp/inbox/`，把「下载即暂存、超时提醒」的治理留在无需系统授权的路径内。V1.3 把同一套巡检扩到项目成熟度：`apps/` 正式项目盯 git 同步，`racing/` 赛马项目盯静默活跃度，让「该提交没提交」和「赛马该清理」在下班前一次报出来。V1.4 新增 `patches/` 本地补丁一组，按更长的静默阈值提示长期未动的复核候选，不查 git 同步（这类不建仓库）。V1.5 把推送出口从直连 PushPlus 改成统一网关 `push-gateway`（`todo` 类，凭据只留在网关一处），并让 `gatewayScript` 支持 `~` 展开。 V1.6 把 `apps/` 的纳管要求收紧：非 git、没有远端都直接报不合格（合格项见 `~/rain/projs/README.md` 的「新增或迁移项目」后校验）。V1.7 优化通知排版：只列异常分块并按紧急度排序，同类长串逐项展开，正常项折叠为一行计数；异常集合与去重逻辑不变。V1.10 增加每周汇总：周五 17:30 那次运行末尾追加一条 `info` 类周报（全绿也发），数据按天累积在 `week-state.json`，不改 `state.json` 结构。
+
+## 每周汇总
+
+每周五 17:30 的这次运行，日常推送逻辑走完后追加一条本周汇总：周一到今天跑了几天、几天全绿、几天有异常、异常按日清单、当前状态；全绿也发「本周 N 次巡检全部正常」，不静默。非周五不产生额外推送。
+
+- 汇总用 `info` 类（只到 iPhone 通知栏，不补微信）；日常异常仍是 `todo` 类。
+- 数据按天累积在部署根的 `week-state.json`（运行时文件，`.deployignore` 保护、`DEPLOY.json` 不登记），与 `state.json` 完全分开，只留最近 14 天。
+- 一周只发一次：`week-state.json` 的 `lastSummaryWeek` 记已发的周一日期，周五手动重跑不会重复发；发送失败不记，可再跑一次重试。
+- 周五没跑（关机 / 未登录）当周不补发，下一周正常汇总。
+
+预览（不推送、不落盘）：
+
+```bash
+python3 guard.py --weekly-preview                            # 按当前时间预览本周汇总
+python3 guard.py --weekly-preview --preview-date 2026-11-27  # 指定日期（测试用）
+```
 
 ## 文件
 
@@ -66,6 +82,7 @@
 | `config.example.json` | 配置模板；首次部署时 `cp config.example.json config.json` 再按本机补基线 |
 | `com.rain.guard.plist` | launchd 定义（每日 17:30），已复制到 `~/Library/LaunchAgents/` |
 | `state.json` | 上次的异常集合，防重复打扰；也用于判断「已恢复」；`archiveHeads` 存归档项目 HEAD 基线，用来发现「归档出现新提交」 |
+| `week-state.json` | 每周汇总的按天累积数据（部署根运行时文件，不入库、部署排除；只留最近 14 天） |
 | `guard.log`、`launchd.*.log` | 日志 |
 
 ## 手动使用
@@ -79,7 +96,7 @@ RAIN_ROOT=/tmp/fake-root RAIN_HOME_ROOT=/tmp/fake-home \
   python3 guard.py --dry-run                          # 演练异常（全假路径，不碰真实目录）
 ```
 
-可用环境变量覆盖，便于演练：`RAIN_ROOT`、`RAIN_HOME_ROOT`、`RAIN_STAGING_DIRS`（逗号分隔）、`RAIN_APPS_DIR`、`RAIN_RACING_DIR`、`RAIN_PATCH_DIR`、`RAIN_LAB_DIR`、`RAIN_UPSTREAM_DIR`、`RAIN_ARCHIVE_DIR`、`RAIN_PROJS_DIR`、`RAIN_AGENT_DIR`、`RAIN_DAEMON_DIR`、`RAIN_CONFIG`、`RAIN_STATE_PATH`。演练时另配 `RAIN_CONFIG` 指向只含白名单段的假配置，可跳过 launchd 检查。
+可用环境变量覆盖，便于演练：`RAIN_ROOT`、`RAIN_HOME_ROOT`、`RAIN_STAGING_DIRS`（逗号分隔）、`RAIN_APPS_DIR`、`RAIN_RACING_DIR`、`RAIN_PATCH_DIR`、`RAIN_LAB_DIR`、`RAIN_UPSTREAM_DIR`、`RAIN_ARCHIVE_DIR`、`RAIN_PROJS_DIR`、`RAIN_AGENT_DIR`、`RAIN_DAEMON_DIR`、`RAIN_CONFIG`、`RAIN_STATE_PATH`、`RAIN_WEEK_STATE`（周汇总累积文件路径）。演练时另配 `RAIN_CONFIG` 指向只含白名单段的假配置，可跳过 launchd 检查。
 
 **验证真实权限时不要用会话内 `--dry-run`**：宿主会话派生的 python3 的 TCC 归属是宿主进程，会假报「巡检受限」。让 launchd 自己跑再读结果：`launchctl kickstart -k gui/$(id -u)/com.rain.guard`，然后看 `guard.log` 与 `state.json`。
 

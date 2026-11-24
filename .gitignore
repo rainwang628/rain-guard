@@ -3,6 +3,7 @@ guard.log
 launchd.out.log
 launchd.err.log
 state.json
+week-state.json
 __pycache__/
 *.pyc
 .DS_Store
