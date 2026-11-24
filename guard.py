@@ -53,7 +53,7 @@ def load_json(path: Path, default):
         return default
 
 
-DEFAULT_NOTIFY = os.path.expanduser("~/rain/projs/services/push-gateway/notify")
+DEFAULT_NOTIFY = os.path.expanduser("~/rain/projs/services/gw-push-gateway/notify")
 
 
 def push(config: dict, title: str, content: str) -> tuple[bool, str]:
