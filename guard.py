@@ -57,7 +57,7 @@ DEFAULT_NOTIFY = os.path.expanduser("~/rain/projs/services/gw-push-gateway/notif
 
 
 def push(config: dict, title: str, content: str) -> tuple[bool, str]:
-    """统一推送入口：~/rain/projs/services/push-gateway/notify。
+    """统一推送入口：~/rain/projs/services/gw-push-gateway/notify。
 
     巡检发现异常属于「要你处理」，用 todo 类：先到通知栏，1 分钟没点开补微信。
     """

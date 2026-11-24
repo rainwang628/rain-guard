@@ -40,6 +40,8 @@
       "com.rain.apiwatch.gateway": "present",
       "com.rain.apiwatch.watchd": "present",
       "com.rain.qianji-readonly.upstream": "run",
+      "com.rain.qianji-sync-daily": "loaded",
+      "com.rain.qianji-serve": "loaded",
       "com.rain.guard": "loaded",
       "com.rain.structure-snapshot": "loaded"
     }

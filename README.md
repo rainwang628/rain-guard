@@ -85,7 +85,7 @@ RAIN_ROOT=/tmp/fake-root RAIN_HOME_ROOT=/tmp/fake-home \
 
 ## 部署与回滚
 
-- 源码在 `~/rain/projs/apps/rain-guard`，部署根在 `~/rain/projs/services/rain-guard`；改代码只改源码，再 `./deploy.sh rain-guard` 单向推送，**禁止在部署根手改代码**。
+- 源码在 `~/rain/projs/apps/src-rain-guard`，部署根在 `~/rain/projs/services/src-rain-guard`；改代码只改源码，再在 `~/rain/projs` 执行 `./deploy.sh src-rain-guard` 单向推送，**禁止在部署根手改代码**。
 - 部署：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.rain.guard.plist`
 - 回滚：`launchctl bootout gui/$(id -u)/com.rain.guard && rm ~/Library/LaunchAgents/com.rain.guard.plist`
 - 基线变更：rain 顶层白名单改 `config.json` 并同步 `AGENTS.macos.md`；home 白名单与暂存目录改 `config.json` 的 `homeWhitelist` / `stagingDirs`；launchd 基线改 `launchdAgents` / `launchdDaemons`，新增服务时把对应 Label 加进去，否则会报「新增未登记」；项目巡检阈值改 `formalProjects` / `racingProjects` / `patchProjects`。
