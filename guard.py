@@ -6,12 +6,12 @@
 2. home 顶层可见条目是否偏离 homeWhitelist（兜住宿主应用静默建目录）；
 3. Downloads / Desktop 等暂存目录是否有超期滞留文件；
 4. 关键 launchd 任务是否在位、已加载、在运行（用户级 LaunchAgents 与第三方 LaunchDaemons）；
-5. 正式项目（apps/）：git 仓库逐个查未提交改动、未推送提交、超期未提交；
+5. 正式项目（apps/）：git 仓库逐个查未推送提交、分支未设 upstream（不看未提交改动）；
 6. 赛马项目（racing/）：按最近提交/修改时间算静默天数，分可清理候选与可跟进两档；
-7. 本地补丁（patches/）：自用、不交付、不建仓库；按最近活动时间提示长期未动的复核候选，自带 .git 的另查未提交改动；
+7. 本地补丁（patches/）：自用、不交付、不建仓库；按最近活动时间提示长期未动的复核候选；
 8. lab（lab/）：实验目录按最近活动时间提示 60 天未动的可清理候选，自带 .git 的另查未提交改动；
-9. upstream（upstream/）：第三方仓库只报未提交改动与 90 天无活动，不查未推送/落后远端；
-10. 归档（archive/）：只报未提交改动与出现新提交（HEAD 变化；首次见到只播种不报）；
+9. upstream（upstream/）：第三方仓库只报 90 天无活动，不查未提交改动、不查未推送/落后远端；
+10. 归档（archive/）：只报出现新提交（HEAD 变化；首次见到只播种不报），不看未提交改动；
 11. 未登记分类：~/rain/projs 顶层目录超出登记集合时提示。
 任一异常走统一推送通道；与上次异常集合相同则不重复打扰。每周五 17:30 那次运行在末尾追加本周汇总，数据按天累积在 week-state.json，不改 state.json 结构。手动调试见 README。
 """
@@ -417,17 +417,15 @@ def latest_activity(path: Path) -> tuple[float, str]:
 
 
 def check_formal_projects(block: dict) -> list[str]:
-    """apps/ 下的正式项目：git 仓库逐个查同步状态；非 git 项目单列由人判断。"""
+    """apps/ 下的正式项目：只查推送状态（未推送提交、分支未设 upstream）；工作区脏不脏不看。"""
     apps_dir = Path(os.path.expanduser(
         os.environ.get("RAIN_APPS_DIR") or block.get("dir") or str(ROOT / "projs" / "apps")
     ))
     if not apps_dir.is_dir():
         return [f"正式项目目录不存在：{apps_dir}"]
 
-    stale_days = float(block.get("staleDays", 3))
     # 豁免名单：已退场但按要求保留源码的本地项目，不再报项目卫生问题
     ignore = set(block.get("ignore") or [])
-    now = datetime.now().timestamp()
     issues: list[str] = []
     try:
         projects = sorted(p for p in apps_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
@@ -443,20 +441,13 @@ def check_formal_projects(block: dict) -> list[str]:
         if not git_info(project, "remote"):
             issues.append(f"{project.name} 没有远端仓库（apps/ 要求建远端并推送）")
             continue
-        dirty = git_info(project, "status", "--porcelain")
-        if dirty:
-            issues.append(f"{project.name} 有未提交改动（{len(dirty.splitlines())} 项）")
+        # 用户 2026-11-26 定：工作区有未提交改动不算问题，只有「有提交没推送」才算
         unpushed = git_info(project, "rev-list", "--count", "@{upstream}..HEAD")
         if unpushed and unpushed != "0":
             issues.append(f"{project.name} 有 {unpushed} 个提交未推送")
         elif git_info(project, "rev-parse", "@{upstream}") is None:
             branch = git_info(project, "rev-parse", "--abbrev-ref", "HEAD") or "HEAD"
             issues.append(f"{project.name} 分支 {branch} 未设 upstream（无法确认推送）")
-        commit_ts = git_info(project, "log", "-1", "--format=%ct")
-        if commit_ts and commit_ts.isdigit():
-            idle_days = (now - float(commit_ts)) / 86400
-            if idle_days > stale_days:
-                issues.append(f"{project.name} 已 {int(idle_days)} 天无提交（阈值 {int(stale_days)} 天）")
     return issues
 
 
@@ -499,7 +490,7 @@ def check_racing_projects(block: dict) -> list[str]:
 def check_patch_projects(block: dict) -> list[str]:
     """patches/ 下的本地补丁：自用、不交付、不建仓库；只提示长期未动的复核候选。
 
-    自带 .git 的项目另查工作区是否脏——无仓库、无远端都不算异常，不查未推送/落后远端。
+    只看长期未动的复核候选；工作区脏不脏、有没有远端都不看（用户 2026-11-26 定）。
     """
     patch_dir = Path(os.path.expanduser(
         os.environ.get("RAIN_PATCH_DIR") or block.get("dir") or str(ROOT / "projs" / "patches")
@@ -517,10 +508,6 @@ def check_patch_projects(block: dict) -> list[str]:
         return [f"扫描本地补丁目录失败：{exc}"]
 
     for project in projects:
-        if (project / ".git").exists():
-            dirty = git_info(project, "status", "--porcelain")
-            if dirty:
-                issues.append(f"{project.name} 有未提交改动（{len(dirty.splitlines())} 项）")
         ts, source = latest_activity(project)
         if ts == 0.0:
             continue
@@ -537,7 +524,7 @@ def check_patch_projects(block: dict) -> list[str]:
 def check_lab_projects(block: dict) -> list[str]:
     """lab/ 下的实验目录：自用、不交付，只提示长期未动的可清理候选（与 patches 同口径）。
 
-    自带 .git 的项目另查工作区是否脏——无仓库、无远端都不算异常，不查未推送/落后远端。
+    只看长期未动的复核候选；工作区脏不脏、有没有远端都不看（用户 2026-11-26 定）。
     """
     lab_dir = Path(os.path.expanduser(
         os.environ.get("RAIN_LAB_DIR") or block.get("dir") or str(ROOT / "projs" / "lab")
@@ -555,10 +542,6 @@ def check_lab_projects(block: dict) -> list[str]:
         return [f"扫描 lab 目录失败：{exc}"]
 
     for project in projects:
-        if (project / ".git").exists():
-            dirty = git_info(project, "status", "--porcelain")
-            if dirty:
-                issues.append(f"{project.name} 有未提交改动（{len(dirty.splitlines())} 项）")
         ts, source = latest_activity(project)
         if ts == 0.0:
             continue
@@ -573,7 +556,7 @@ def check_lab_projects(block: dict) -> list[str]:
 # ---------- 检查九：upstream（第三方仓库） ----------
 
 def check_upstream_projects(block: dict) -> list[str]:
-    """upstream/ 下的第三方仓库：只报未提交改动与超期无活动，不查未推送/落后远端。"""
+    """upstream/ 下的第三方仓库：只报超期无活动，不查未提交改动、不查未推送/落后远端。"""
     upstream_dir = Path(os.path.expanduser(
         os.environ.get("RAIN_UPSTREAM_DIR") or block.get("dir") or str(ROOT / "projs" / "upstream")
     ))
@@ -589,10 +572,6 @@ def check_upstream_projects(block: dict) -> list[str]:
         return [f"扫描 upstream 目录失败：{exc}"]
 
     for project in projects:
-        if is_git_repo(project):
-            dirty = git_info(project, "status", "--porcelain")
-            if dirty:
-                issues.append(f"{project.name} 有未提交改动（{len(dirty.splitlines())} 项）")
         ts, source = latest_activity(project)
         if ts == 0.0:
             continue
@@ -606,7 +585,7 @@ def check_upstream_projects(block: dict) -> list[str]:
 
 def check_archive_projects(block: dict,
                            known_heads: dict | None = None) -> tuple[list[str], dict]:
-    """archive/ 下的归档目录：只报未提交改动与出现新提交。
+    """archive/ 下的归档目录：只报出现新提交（不看工作区脏不脏）。
 
     HEAD 记在 state 的 archiveHeads 里：首次见到只播种、不报；之后 HEAD 变化即报「归档项目出现新提交」。
     目录为空、或只有 README.md 时不报；非 git 目录不参与新提交判断。
@@ -636,9 +615,6 @@ def check_archive_projects(block: dict,
             continue
         if not is_git_repo(project):
             continue
-        dirty = git_info(project, "status", "--porcelain")
-        if dirty:
-            issues.append(f"{project.name} 有未提交改动（{len(dirty.splitlines())} 项）")
         head = git_info(project, "rev-parse", "HEAD")
         if head:
             prev = known.get(project.name)

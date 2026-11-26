@@ -1,6 +1,6 @@
 # rain-guard
 
-下班前环境巡检。每日 17:30 由 launchd（`com.rain.guard`）跑一次，覆盖十一块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度、本地补丁（`patches/`）长期未动复核、实验目录（`lab/`）可清理候选、第三方仓库（`upstream/`）未提交与无活动、归档（`archive/`）未提交与新提交、`~/rain/projs` 顶层未登记分类。有异常才推送：走统一推送网关的 `todo` 类，先到 iPhone 通知栏，1 分钟没处理再补一条微信；正常静默，同一组异常不重复推送。每周五 17:30 那次运行在末尾追加一条本周汇总（`info` 类，只到通知栏、不补微信；全绿也发）。
+下班前环境巡检。每日 17:30 由 launchd（`com.rain.guard`）跑一次，覆盖十一块：`~/rain` 顶层结构、home 顶层结构、暂存目录滞留、用户级 LaunchAgents 与第三方 LaunchDaemons、正式项目（`apps/`）git 同步状态、赛马项目（`racing/`）静默活跃度、本地补丁（`patches/`）长期未动复核、实验目录（`lab/`）可清理候选、第三方仓库（`upstream/`）长期无活动、归档（`archive/`）出现新提交、`~/rain/projs` 顶层未登记分类。有异常才推送：走统一推送网关的 `todo` 类，先到 iPhone 通知栏，1 分钟没处理再补一条微信；正常静默，同一组异常不重复推送。每周五 17:30 那次运行在末尾追加一条本周汇总（`info` 类，只到通知栏、不补微信；全绿也发）。
 
 代码仓库：`https://github.com/rainwang628/rain-guard`（公开）。换机后先按本文件部署，首次运行会自动建立新的 state 基线。
 
@@ -13,12 +13,12 @@
 | 暂存目录 | `stagingDirs.dirs` 里非隐藏、非 `ignore` 的条目 mtime 超过 `graceHours` 即报 | Downloads 里隔夜未处理的安装包、Desktop 上留了几天的截图、Documents 里非 Adobe 的遗留 |
 | `~/Library/LaunchAgents` | 每个 Label 达到 `expected` 要求的水位：`present` 仅需 plist 在位 / `loaded` 需已注册到 gui 或 user 域 / `run` 需有 PID | rain 服务掉线、未登记的新 agent 出现、plist 被删 |
 | `/Library/LaunchDaemons` | 同上，状态取自 system 域 | Clash 特权助手未运行、第三方 daemon 新增未登记 |
-| `apps/`（正式项目） | git 仓库逐个查：未提交改动、`@{upstream}..HEAD` 未推送、未设 upstream、末次提交超 `staleDays`；非 git 仓库单列提示 | 有提交没 push、分支没跟踪远端、太久没提交、正式项目还没纳管 |
+| `apps/`（正式项目） | git 仓库逐个查：`@{upstream}..HEAD` 未推送、未设 upstream；**未提交改动不报**（工作区脏是常态）、不看末次提交多久前；非 git 仓库单列提示 | 有提交没 push、分支没跟踪远端、正式项目还没纳管 |
 | `racing/`（赛马项目） | 取 git 末次提交与目录文件 mtime 的较新者算静默天数：`≥staleDays` 列可清理候选，`≤activeDays` 列近期活跃可跟进 | 赛马项目长期不动该清理、最近有动静可跟进 |
-| `patches/`（本地补丁） | 按目录文件 mtime 算静默天数：`≥staleDays` 列长期未动复核候选；**自带 `.git` 的另查未提交改动**（无仓库、无远端都不算异常；不查未推送/落后远端） | 本地补丁长期没动，复核是否仍需要；带仓库的还有未提交改动 |
-| `lab/`（实验目录） | 按目录文件 mtime 算静默天数：`≥staleDays`（默认 60）列可清理候选；**自带 `.git` 的另查未提交改动**，与 `patches/` 同口径 | 实验目录长期没动，可清理；带仓库的还有未提交改动 |
-| `upstream/`（第三方仓库） | 只查两件：未提交改动、超 `staleDays`（默认 90）无活动；**不查**未推送/落后远端（不是我们的交付物） | 第三方仓库有本地改动、长期没动 |
-| `archive/`（归档） | 只查两件：未提交改动、出现新提交；新提交按 state 的 `archiveHeads` 里记的 HEAD 比对，首次见到只播种不报；空目录或只有 `README.md` 不报 | 归档项目被动过、又出现新提交 |
+| `patches/`（本地补丁） | 按目录文件 mtime 算静默天数：`≥staleDays` 列长期未动复核候选；**不查未提交改动、不查未推送/落后远端** | 本地补丁长期没动，复核是否仍需要 |
+| `lab/`（实验目录） | 按目录文件 mtime 算静默天数：`≥staleDays`（默认 60）列可清理候选；**不查未提交改动**，与 `patches/` 同口径 | 实验目录长期没动，可清理 |
+| `upstream/`（第三方仓库） | 只查一件：超 `staleDays`（默认 90）无活动；**不查**未提交改动、不查未推送/落后远端（不是我们的交付物） | 第三方仓库长期没动 |
+| `archive/`（归档） | 只查一件：出现新提交（**不看未提交改动**）；新提交按 state 的 `archiveHeads` 里记的 HEAD 比对，首次见到只播种不报；空目录或只有 `README.md` 不报 | 归档项目又出现新提交 |
 | `~/rain/projs` 顶层 | 目录（`.` 开头跳过）须在登记集合内；根下文件（`README.md`、`deploy.sh` 等）不看 | 新出现的顶层分类目录未登记 |
 
 水位按需配置，避免把「人为禁用」误报成故障：`com.google.GoogleUpdater.wake`、`com.valvesoftware.steamclean`、`io.github.clash-verge-rev.clash-verge-rev` 只要求 `present`，因为它们是主动关掉的。
@@ -32,12 +32,12 @@
 | `stagingDirs.dirs` | `~/rain/tmp/inbox` | 浏览器默认下载路径改到 `~/rain/tmp/inbox/`；`~/Downloads`／`~/Documents`／`~/Desktop` 全部移出巡检（三者均受 TCC 保护，需 FDA 才能读） |
 | `stagingDirs.graceHours` | `24` | 宽限期，刚下载的文件不报；设 `0` 则出现即报 |
 | `stagingDirs.ignore` | `.DS_Store`、`.localized` | 隐藏项本就跳过；这里只列需要额外忽略的名字 |
-| `formalProjects` | `staleDays: 3`，`dir: ~/rain/projs/apps`，`ignore: []` | 正式项目巡检；`enabled: false` 停用；`ignore` 列要豁免的项目名（已退场但按要求保留源码的，如 `aa-notify`） |
+| `formalProjects` | `dir: ~/rain/projs/apps`，`ignore: []`（不再用 `staleDays`，末次提交时间不判） | 正式项目巡检；`enabled: false` 停用；`ignore` 列要豁免的项目名（已退场但按要求保留源码的，如 `aa-notify`） |
 | `racingProjects` | `staleDays: 30`，`activeDays: 7`，`dir: ~/rain/projs/racing` | 赛马项目巡检；两档之间（8–29 天）不报，避免中间态天天打扰 |
-| `patchProjects` | `staleDays: 60`，`dir: ~/rain/projs/patches` | 本地补丁巡检；阈值比赛马长，只报长期未动的复核候选；自带 `.git` 的另查未提交改动 |
-| `labProjects` | `staleDays: 60`，`dir: ~/rain/projs/lab` | 实验目录巡检；只报长期未动的可清理候选；自带 `.git` 的另查未提交改动，与 `patches/` 同口径 |
-| `upstreamProjects` | `staleDays: 90`，`dir: ~/rain/projs/upstream` | 第三方仓库巡检；只报未提交改动与超期无活动，不查未推送/落后远端 |
-| `archiveProjects` | `dir: ~/rain/projs/archive` | 归档巡检；只报未提交改动与出现新提交（HEAD 记在 state 的 `archiveHeads`，首次只播种不报） |
+| `patchProjects` | `staleDays: 60`，`dir: ~/rain/projs/patches` | 本地补丁巡检；阈值比赛马长，只报长期未动的复核候选；未提交改动不查 |
+| `labProjects` | `staleDays: 60`，`dir: ~/rain/projs/lab` | 实验目录巡检；只报长期未动的可清理候选；未提交改动不查，与 `patches/` 同口径 |
+| `upstreamProjects` | `staleDays: 90`，`dir: ~/rain/projs/upstream` | 第三方仓库巡检；只报超期无活动，不查未提交改动、不查未推送/落后远端 |
+| `archiveProjects` | `dir: ~/rain/projs/archive` | 归档巡检；只报出现新提交（HEAD 记在 state 的 `archiveHeads`，首次只播种不报），未提交改动不查 |
 | `unregisteredProjects` | `registry` 为 8 个登记目录 | projs 顶层未登记分类检测；`registry` 可覆盖，`enabled: false` 停用 |
 
 `homeWhitelist`、`stagingDirs` 不配就不查对应项。七段项目巡检默认启用（内建默认目录 `~/rain/projs/` 下的 `apps`、`racing`、`patches`、`lab`、`upstream`、`archive`，以及 projs 顶层登记集合），要停用需显式写 `enabled: false`。项目巡检忽略 `node_modules`、`.venv`、`dist` 等构建目录，只按源码文件的 mtime 算活跃度。
